@@ -725,9 +725,11 @@ export class TaskService {
     reference: string,
     destination: TaskLocation,
     operationId: string,
-    transform: (task: TaskState, all: readonly TaskState[]) => TaskState = (
-      task,
-    ) => task,
+    transform: (
+      task: TaskState,
+      all: readonly TaskState[],
+      location: TaskLocation,
+    ) => TaskState = (task) => task,
     options?: { readonly ifRevision?: string },
   ): Promise<TaskMutationResult> {
     const snapshot = await this.repository.readAll();
@@ -753,7 +755,7 @@ export class TaskService {
         operationId,
         ownedPaths: [],
       };
-    const task = this.stamped(transform(current.task, all));
+    const task = this.stamped(transform(current.task, all, current.location));
     if (current.location === destination)
       throw new RecordValidationError("task_lifecycle_already_at_destination");
     const result = await this.lifecycleRepository().writeLifecycle({
@@ -795,26 +797,49 @@ export class TaskService {
     operationId: string,
     finalSummary?: string,
   ): Promise<TaskMutationResult> {
-    return this.moveTask(reference, "completed", operationId, (task) => {
-      const terminal = this.lifecycle.terminalStatuses[0];
-      if (!terminal)
-        throw new RecordValidationError(
-          "Lifecycle terminal status is not configured.",
-        );
-      const transitioned = transitionTask(task, terminal, this.lifecycle);
-      const withSummary =
-        finalSummary === undefined
-          ? transitioned
-          : taskState({ ...transitioned, finalSummary });
-      // QCLI-336: persists QCLI-252's response-only signal onto the record
-      // itself, computed once from the checklist state at the moment of
-      // completion -- see unresolvedAtCompletion's own doc comment on
-      // TaskState for why this is never recomputed afterward.
-      const unresolved = unresolvedAtCompletion(withSummary);
-      return unresolved === undefined
-        ? withSummary
-        : taskState({ ...withSummary, unresolvedAtCompletion: unresolved });
-    });
+    return this.moveTask(
+      reference,
+      "completed",
+      operationId,
+      (task, _all, location) => {
+        const terminal = this.lifecycle.terminalStatuses[0];
+        if (!terminal)
+          throw new RecordValidationError(
+            "Lifecycle terminal status is not configured.",
+          );
+        // QCLI-338 (opum-doc DEC-172 (4ai) A): a record may already BE at the
+        // terminal status -- reached by `task edit --status <terminal>`, which
+        // per QCLI-221 deliberately does not relocate -- while STILL STORED IN
+        // tasks/. Completing it is that record's REAL completion under
+        // QCLI-336's model, so the STATUS transition is skipped and everything
+        // below still runs: `complete()` computes finalSummary and
+        // unresolvedAtCompletion whatever status the record already had. One
+        // Done shape, not two.
+        //
+        // The skip is guarded to `location === "tasks"` EXACTLY. A record
+        // already in completed/ or in archive/tasks/ keeps transitionTask's own
+        // refusal (`Illegal task transition: Done -> Done ...`), UNCHANGED --
+        // the relocation this task asks for is tasks/ -> completed/ only, and
+        // moveTask's own already-at-destination check is never reached for
+        // those shapes because this closure throws first.
+        const transitioned =
+          task.status === terminal && location === "tasks"
+            ? task
+            : transitionTask(task, terminal, this.lifecycle);
+        const withSummary =
+          finalSummary === undefined
+            ? transitioned
+            : taskState({ ...transitioned, finalSummary });
+        // QCLI-336: persists QCLI-252's response-only signal onto the record
+        // itself, computed once from the checklist state at the moment of
+        // completion -- see unresolvedAtCompletion's own doc comment on
+        // TaskState for why this is never recomputed afterward.
+        const unresolved = unresolvedAtCompletion(withSummary);
+        return unresolved === undefined
+          ? withSummary
+          : taskState({ ...withSummary, unresolvedAtCompletion: unresolved });
+      },
+    );
   }
   /**
    * Retires a task at the closed status with a resolution and retains it
