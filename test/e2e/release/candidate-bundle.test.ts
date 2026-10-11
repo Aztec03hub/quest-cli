@@ -393,4 +393,11 @@ test("a bundle refuses committed platform artifacts off a release ref, and refus
     await rm(directory, { recursive: true, force: true });
     await rm(out, { recursive: true, force: true });
   }
-});
+  // QCLI-466: this test builds several candidate bundles, which is far slower
+  // than bun's 5000ms per-test default allows for under CI load. Measured in
+  // CI (prepublication-qualification run 37689693005, 2026-10-07): it hit that
+  // cap and was killed at 5000.80ms, while the heaviest siblings in this same
+  // file ran ~2470ms; locally it runs ~3.4s. 60_000 -- the repo's slow-test
+  // convention -- gives a wide margin over that measured CI floor, so the same
+  // tree cannot pass source-gates on one run and fail on another.
+}, 60_000);
