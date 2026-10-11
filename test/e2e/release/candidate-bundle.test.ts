@@ -274,6 +274,63 @@ test("the packed root carries re-derived digests, and the working tree is left u
   }
 });
 
+test("a pack failure during bundle assembly leaves the root package.json untouched", async () => {
+  // QCLI-420: the mutation window (re-derived digests, then a version swap per
+  // launcher) used to restore package.json only on the success path, so a throw
+  // from packing left the tree rewritten with version X-rc.N and re-derived
+  // digests. npm always ships a package's `bin` files, so removing the root
+  // launcher makes the packed root tarball omit package/bin/quest.cjs and
+  // pack() throw. That file is at the root, not under npm/quest-<platform>/, so
+  // the QCLI-419 rebuilt check is unaffected and releaseRef: true reaches
+  // packing (off a release ref committed platform artifacts refuse earlier).
+  const directory = await fixture();
+  const out = await mkdtemp(join(tmpdir(), "quest-candidate-out-"));
+  try {
+    const commit = await commitFixture(directory);
+    await rm(join(directory, "bin", "quest.cjs"));
+    // The pre-run state the function must restore to.
+    const before = await readFile(join(directory, "package.json"), "utf8");
+    await expect(
+      buildCandidateBundle({ commit, out, directory, releaseRef: true }),
+    ).rejects.toThrow(/does not contain package\/bin\/quest\.cjs/);
+    expect(await readFile(join(directory, "package.json"), "utf8")).toBe(
+      before,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await rm(out, { recursive: true, force: true });
+  }
+});
+
+test("a tarball-name mismatch during bundle assembly leaves the root package.json untouched", async () => {
+  // The other throw inside the mutation window: packLauncher writes the root
+  // package.json with its packed version, then the archive npm produces must be
+  // named tarballName("@opum-ai/quest", version). A different root `name` makes
+  // npm name the archive after it instead, so packLauncher throws after the
+  // rewrite — the failure path QCLI-420 moved into a finally.
+  const directory = await fixture();
+  const out = await mkdtemp(join(tmpdir(), "quest-candidate-out-"));
+  try {
+    const commit = await commitFixture(directory);
+    const packagePath = join(directory, "package.json");
+    const manifest = JSON.parse(await readFile(packagePath, "utf8"));
+    await writeFile(
+      packagePath,
+      JSON.stringify({ ...manifest, name: "@opum-ai/quest-demo" }),
+    );
+    // Captured after the mutation, so it is the pre-run state the function must
+    // restore to.
+    const before = await readFile(packagePath, "utf8");
+    await expect(
+      buildCandidateBundle({ commit, out, directory, releaseRef: true }),
+    ).rejects.toThrow(/root archive is .*expected/);
+    expect(await readFile(packagePath, "utf8")).toBe(before);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await rm(out, { recursive: true, force: true });
+  }
+});
+
 test("a bundle without a real source commit is refused", async () => {
   const directory = await fixture();
   const out = await mkdtemp(join(tmpdir(), "quest-candidate-out-"));

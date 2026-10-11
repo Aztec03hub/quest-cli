@@ -232,42 +232,53 @@ export async function buildCandidateBundle({
   const artifactProvenance = rebuilt.length ? "rebuilt" : "committed";
 
   // `npm pack` reads package.json from disk, so the corrected digests have to
-  // be written there. The ORIGINAL is kept and restored after packing: a build
+  // be written there. The ORIGINAL is kept and restored in the `finally` below,
+  // so the restore runs whether packing succeeds or throws (QCLI-420): a build
   // step that leaves the working tree mutated will eventually have that
   // mutation swept into an unrelated commit, which is exactly what happened —
   // a red-case test's tampered digest reached dev inside another change.
   const originalRootPackage = await readFile(rootPackagePath, "utf8");
-  rootPackage.questPlatformPackages = platformDigests;
-  await writeFile(rootPackagePath, `${JSON.stringify(rootPackage, null, 2)}\n`);
 
   // tarballs/ holds exactly what stages under release-candidate: the rc
   // launcher and the six platforms. final/ holds the X launcher, which is never
   // staged and is published to `latest` only by promote-release.mjs.
   const tarballs = join(out, "tarballs");
   const final = join(out, "final");
-  await rm(out, { recursive: true, force: true });
-  await mkdir(tarballs, { recursive: true });
-  await mkdir(final, { recursive: true });
-  await mkdir(join(out, "evidence"), { recursive: true });
-
   const digests = [];
   const packages = [];
-
-  const packLauncher = async (asVersion, into) => {
+  let rcRow;
+  let finalRow;
+  try {
+    rootPackage.questPlatformPackages = platformDigests;
     await writeFile(
       rootPackagePath,
-      `${JSON.stringify({ ...rootPackage, version: asVersion }, null, 2)}\n`,
+      `${JSON.stringify(rootPackage, null, 2)}\n`,
     );
-    const row = await pack(directory, into, "package/bin/quest.cjs");
-    if (row.filename !== tarballName("@opum-ai/quest", asVersion))
-      throw new Error(
-        `root archive is ${row.filename}, expected ${tarballName("@opum-ai/quest", asVersion)}`,
+
+    await rm(out, { recursive: true, force: true });
+    await mkdir(tarballs, { recursive: true });
+    await mkdir(final, { recursive: true });
+    await mkdir(join(out, "evidence"), { recursive: true });
+
+    const packLauncher = async (asVersion, into) => {
+      await writeFile(
+        rootPackagePath,
+        `${JSON.stringify({ ...rootPackage, version: asVersion }, null, 2)}\n`,
       );
-    return row;
-  };
-  const rcRow = await packLauncher(rcVersion, tarballs);
-  const finalRow = await packLauncher(version, final);
-  await writeFile(rootPackagePath, originalRootPackage);
+      const row = await pack(directory, into, "package/bin/quest.cjs");
+      if (row.filename !== tarballName("@opum-ai/quest", asVersion))
+        throw new Error(
+          `root archive is ${row.filename}, expected ${tarballName("@opum-ai/quest", asVersion)}`,
+        );
+      return row;
+    };
+    rcRow = await packLauncher(rcVersion, tarballs);
+    finalRow = await packLauncher(version, final);
+  } finally {
+    // Restore in the finally so a pack failure restores too, not only the
+    // success path (QCLI-420). Nothing after this block mutates the root.
+    await writeFile(rootPackagePath, originalRootPackage);
+  }
   const equivalence = await checkLauncherEquivalence({
     rcTarball: join(tarballs, rcRow.filename),
     finalTarball: join(final, finalRow.filename),
@@ -327,7 +338,6 @@ export async function buildCandidateBundle({
       2,
     )}\n`,
   );
-  await writeFile(rootPackagePath, originalRootPackage);
   return {
     version,
     rcVersion,
