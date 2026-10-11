@@ -24,8 +24,14 @@ function renderLines(
   if (Array.isArray(value)) {
     if (value.length === 0) return [`${prefix}(empty)`];
     return value.flatMap((entry) => {
-      if (entry === null || typeof entry !== "object")
+      if (entry === null || typeof entry !== "object") {
+        if (typeof entry === "string" && entry.includes("\n"))
+          return [
+            `${prefix}-`,
+            ...entry.split("\n").map((line) => `${prefix}  | ${line}`),
+          ];
         return [`${prefix}- ${renderScalar(entry)}`];
+      }
       return [
         `${prefix}-`,
         ...renderLines(entry, indentation + 2, priorityKeys),
@@ -57,8 +63,22 @@ function renderLines(
     );
   if (entries.length === 0) return [`${prefix}{}`];
   return entries.flatMap(([key, entry]) => {
-    if (entry === null || typeof entry !== "object")
+    if (entry === null || typeof entry !== "object") {
+      // QCLI-409: a MULTI-LINE string value is delimited -- its lines render
+      // under the key, each prefixed with `| ` -- so content embedded in a
+      // value cannot read as live record fields. A Backlog-migrated record
+      // carries its original frontmatter inside `description` (including a
+      // `status: To Do` line), which rendered indistinguishably from the
+      // record's own `status` and made `quest task list | grep -c status:`
+      // count far more than the record count. A single-line string is
+      // unchanged.
+      if (typeof entry === "string" && entry.includes("\n"))
+        return [
+          `${prefix}${key}:`,
+          ...entry.split("\n").map((line) => `${prefix}  | ${line}`),
+        ];
       return [`${prefix}${key}: ${renderScalar(entry)}`];
+    }
     return [
       `${prefix}${key}:`,
       ...renderLines(entry, indentation + 2, priorityKeys),
