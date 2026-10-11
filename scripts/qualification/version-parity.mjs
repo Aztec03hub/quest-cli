@@ -34,6 +34,18 @@ export const PEER = Object.freeze({
   packageName: "@opum-ai/lore",
 });
 
+/** The one argv this reads the peer with. Exported so a test can pin it. */
+export function peerReadArgs(peer = PEER) {
+  return [
+    "api",
+    "--hostname",
+    "github.com",
+    "-H",
+    "Accept: application/vnd.github.raw",
+    `repos/${peer.repository}/contents/package.json?ref=${peer.ref}`,
+  ];
+}
+
 /**
  * The peer's package.json version on its ref. Every failure comes back as
  * `version: null` with the reason, never thrown and never defaulted.
@@ -44,16 +56,9 @@ export async function readPeerVersion({
 } = {}) {
   const source = `${peer.repository}@${peer.ref}:package.json`;
   try {
-    const { stdout } = await execFileFn(
-      "gh",
-      [
-        "api",
-        "-H",
-        "Accept: application/vnd.github.raw",
-        `repos/${peer.repository}/contents/package.json?ref=${peer.ref}`,
-      ],
-      { maxBuffer: 4 * 1024 * 1024 },
-    );
+    const { stdout } = await execFileFn("gh", peerReadArgs(peer), {
+      maxBuffer: 4 * 1024 * 1024,
+    });
     const manifest = JSON.parse(stdout);
     if (manifest?.name !== peer.packageName)
       return {

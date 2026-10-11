@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   checkVersionParity,
   PEER,
+  peerReadArgs,
   readPeerVersion,
   requireVersionParity,
 } from "../scripts/qualification/version-parity.mjs";
@@ -90,6 +91,57 @@ test("a well-formed lore manifest is read", async () => {
     version: "0.11.0",
     source: "opum-ai/lore-cli@main:package.json",
   });
+});
+
+// QCLI-396: the read pins the host, so a GH_HOST in the environment cannot
+// redirect the peer read away from github.com (mirror of lore-cli's read).
+
+/** A stub execFile that records the { file, args } the real call would pass. */
+function capturing() {
+  const calls: Array<{ file: string; args: string[] }> = [];
+  const execFile = async (file: string, args: readonly string[]) => {
+    calls.push({ file, args: [...args] });
+    return {
+      stdout: JSON.stringify({ name: "@opum-ai/lore", version: "0.11.0" }),
+    };
+  };
+  return { calls, execFile };
+}
+
+test("the peer read passes --hostname github.com, exactly peerReadArgs()", async () => {
+  const { calls, execFile } = capturing();
+  await readPeerVersion({ execFile });
+  const expected = [
+    "api",
+    "--hostname",
+    "github.com",
+    "-H",
+    "Accept: application/vnd.github.raw",
+    "repos/opum-ai/lore-cli/contents/package.json?ref=main",
+  ];
+  expect(calls).toHaveLength(1);
+  expect(calls[0].file).toBe("gh");
+  expect(calls[0].args).toEqual(expected);
+  expect(peerReadArgs()).toEqual(calls[0].args);
+});
+
+test("a non-github GH_HOST cannot redirect the peer read", async () => {
+  const prior = process.env.GH_HOST;
+  process.env.GH_HOST = "evil.example";
+  try {
+    const { calls, execFile } = capturing();
+    await readPeerVersion({ execFile });
+    expect(calls[0].args.slice(0, 3)).toEqual([
+      "api",
+      "--hostname",
+      "github.com",
+    ]);
+    expect(calls[0].args).toContain("github.com");
+    expect(calls[0].args).not.toContain("evil.example");
+  } finally {
+    if (prior === undefined) delete process.env.GH_HOST;
+    else process.env.GH_HOST = prior;
+  }
 });
 
 test("the local publisher checks parity before any receipt, credential or publish", async () => {

@@ -12,6 +12,8 @@ export interface PeerRead {
   readonly error?: string;
 }
 
+export function peerReadArgs(peer?: typeof PEER): string[];
+
 export function readPeerVersion(options?: {
   peer?: typeof PEER;
   execFile?: (

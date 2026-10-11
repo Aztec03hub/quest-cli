@@ -239,6 +239,35 @@ test("an unreadable receipt reads as no receipt", async () => {
   );
 });
 
+// QCLI-396: the receipt read pins the host, so a GH_HOST in the environment
+// cannot redirect the read that gates publication away from github.com.
+test("the receipt fetch pins --hostname github.com despite a hostile GH_HOST", async () => {
+  const prior = process.env.GH_HOST;
+  process.env.GH_HOST = "evil.example";
+  try {
+    const calls: Array<{ file: string; args: string[] }> = [];
+    const result = await fetchReceipt(VERSION, {
+      execFile: async (file: string, args: readonly string[]) => {
+        calls.push({ file, args: [...args] });
+        return { stdout: JSON.stringify(receipt()), stderr: "" };
+      },
+    });
+    expect(result.doc).not.toBeNull();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].file).toBe("gh");
+    expect(calls[0].args.slice(0, 3)).toEqual([
+      "api",
+      "--hostname",
+      "github.com",
+    ]);
+    expect(calls[0].args).toContain("github.com");
+    expect(calls[0].args).not.toContain("evil.example");
+  } finally {
+    if (prior === undefined) delete process.env.GH_HOST;
+    else process.env.GH_HOST = prior;
+  }
+});
+
 test("the publisher checks the run before downloading anything from it", async () => {
   const calls: string[][] = [];
   const run = {

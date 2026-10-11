@@ -366,6 +366,8 @@ export async function fetchReceipt(
       "gh",
       [
         "api",
+        "--hostname",
+        "github.com",
         "-H",
         "Accept: application/vnd.github.raw",
         `repos/${RECEIPT_REPOSITORY}/contents/${path}?ref=main`,
