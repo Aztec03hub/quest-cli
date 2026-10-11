@@ -10,6 +10,20 @@ dated by its own tag. No date here is inferred (QCLI-398).
 
 ## Unreleased
 
+### Added
+
+- **`task list --across-refs` reports a genuine id collision distinctly from a
+  status conflict, as a per-entry `identity` field** (QCLI-432; the shape is
+  final, opum-doc 565 / DEC-172 (4u)). The field is `task` when every state of
+  an id carries the same `createdAt` (one record read from several refs),
+  `collision` when the states carry two or more distinct `createdAt` values
+  (different records that happen to share an id -- the window the refs-aware
+  allocator leaves open when two checkouts each create before either commits),
+  and `unresolved` when a state carries no `createdAt`, so the two cannot be
+  compared. **A consumer that must detect two different records sharing an id
+  MUST read `identity`**: `conflict` reports only status divergence WITHIN one
+  task and cannot tell a collision from one task whose states disagree.
+
 ## 0.13.0
 
 ### Added
