@@ -298,10 +298,31 @@ The way through is two commits:
    while the version half now reads the new number. `check:packages` exits 0
    in this state; verified at the 0.7.0 bump.
 2. **Bytes.** With `source-gates` green, dispatch the qualification workflow
-   against the branch, let `immutable-candidates` build all six platforms with
-   the new version compiled in, then download the `quest-package-<target>`
-   artifacts and commit the real binaries, regenerated manifests and updated
-   checksums.
+   against the branch so `immutable-candidates` builds all six platforms with
+   the new version compiled in, then install the result with the repository
+   script rather than the hand steps this section used to describe:
+
+   ```sh
+   bun run install:platform-candidates -- --run <qualification-run-id>
+   ```
+
+   That script (`scripts/install-platform-candidates.mjs`, QCLI-305) downloads
+   the six `quest-package-<target>` artifacts from that run, recomputes each
+   binary's sha256 and **refuses, writing nothing, unless it matches that
+   artifact's own `questBinarySha256`** -- the digest check runs over every
+   artifact before anything is copied. It then writes each manifest, LICENSE
+   and binary into `npm/quest-<target>/`, chmods the binary, and rewrites root
+   `package.json`'s `questPlatformPackages` map to the recomputed digests.
+   `npm/quest-darwin-arm64/bin/quest` is the last thing it writes, and it never
+   executes a downloaded binary (see "A locally-rebuilt darwin-arm64 binary can
+   SIGKILL git on this host"). Add `--dry-run` to download and verify a run id
+   and write nothing:
+
+   ```sh
+   bun run install:platform-candidates -- --run <qualification-run-id> --dry-run
+   ```
+
+   Then commit the real binaries, manifests and checksums.
 
 A local `build:packages` run is a legitimate substitute for step 2 on a host
 that can cross-compile all six targets; run it with `QUEST_RELEASE_BUILD=1`, the

@@ -47,6 +47,7 @@
     "test:packages": "QUEST_AGENT_PLUGINS=off bun run scripts/test-packed-packages.mjs",
     "qualify:migration-artifact": "bun run scripts/qualification/migration-lifecycle.mjs",
     "deliver:packages": "bun run scripts/deliver-package-artifacts.mjs",
+    "install:platform-candidates": "node scripts/install-platform-candidates.mjs",
     "test:package-artifact-delivery": "bun run scripts/test-package-artifact-delivery.mjs",
     "test:repository-check-scope": "node scripts/test-repository-check-scope.mjs",
     "test:mod": "node scripts/mod-test.mjs",
