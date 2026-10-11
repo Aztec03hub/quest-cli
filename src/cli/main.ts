@@ -787,6 +787,49 @@ function flagShapedPositional(
   );
 }
 
+/**
+ * QCLI-283 / DEC-172 (4ak). `task create` and `task edit` spell the same list
+ * fields differently: create sets a list WHOLESALE with `--label`/`--reference`
+ * (and `--assignee`/`--dependency`/`--modified-file`), while edit MUTATES it
+ * with the `--add-*`/`--remove-*` flags and, for labels, a wholesale
+ * `--labels`. A caller moving from create to edit met the generic
+ * "Unrecognized flag" failure from `usageFailure` below, which named the
+ * offending flag but never the edit-side spelling that replaces it -- so the
+ * create/edit split was silent.
+ *
+ * This maps each create-only spelling edit REFUSES to the edit-side flag(s) to
+ * use instead. Deliberately a refusal, NOT an alias: an alias would widen the
+ * public surface to paper over a naming split, while a precise refusal teaches
+ * the right flag in one step. No key here becomes an accepted flag.
+ */
+const EDIT_FLAG_REDIRECTS: Readonly<Record<string, string>> = {
+  "--label": "--labels (replace all), --add-label, or --remove-label",
+  "--reference": "--add-reference or --remove-reference",
+};
+
+/**
+ * A usage failure naming the edit-side flag(s) to use in place of a create-only
+ * spelling, or undefined when none such was passed (QCLI-283). Sits BEFORE the
+ * generic `usageFailure`/`only()` check so the create/edit naming split is
+ * named rather than the caller only being told the flag is unrecognized.
+ */
+function createSpellingFailure(
+  parsed: NonNullable<ReturnType<typeof flags>>,
+): InvocationResult | undefined {
+  const offending = Object.keys(EDIT_FLAG_REDIRECTS).filter((flag) =>
+    parsed.values.has(flag),
+  );
+  if (offending.length === 0) return undefined;
+  const sentences = offending.map(
+    (flag) =>
+      `\`task edit\` does not accept ${flag}; that is \`task create\`'s spelling and \`task edit\` uses ${EDIT_FLAG_REDIRECTS[flag]} instead.`,
+  );
+  return failure(
+    "usage",
+    `${sentences.join(" ")} Nothing was written: the rest of this command was not applied either.`,
+  );
+}
+
 /** Resolves the bare `quest agents` command's persisted skill-source setting.
  * An uninitialized workspace (no `quest init` yet) defaults to today's
  * behavior ("repo") rather than failing `agents --check` outright, since
@@ -4144,7 +4187,17 @@ export async function runQuest(
         "--actor-kind",
         "--accountable-human",
       ];
-      if (!parsed || !only(parsed, editFlags))
+      if (!parsed)
+        return usageFailure(
+          parsed,
+          editFlags,
+          "task edit received invalid arguments.",
+        );
+      // QCLI-283: a create-only spelling (--label/--reference) is refused with
+      // the edit-side flag named, BEFORE the generic unrecognized-flag path.
+      const createSpelled = createSpellingFailure(parsed);
+      if (createSpelled) return createSpelled;
+      if (!only(parsed, editFlags))
         return usageFailure(
           parsed,
           editFlags,
