@@ -738,14 +738,15 @@ function unknownFlags(
  * something it does not accept at all) still gets `fallback`, since there is
  * no flag to name.
  *
- * Only covers the direct `if (!parsed || !only(...)) return failure(...)`
- * shape. A handful of call sites (the `migration backlog`, `milestone`/
- * `decision`, and `draft` action dispatchers) instead gate each action with
- * a *positive* `only()` check and cascade past all of them to one shared
- * bottom-of-group fallback message on failure; by the time execution reaches
- * that fallback, which action's allowed-list (if any) was actually being
- * evaluated is no longer known, so this helper does not reach them. That is
- * a structural gap, not an oversight -- see QCLI-270's implementation notes.
+ * QCLI-282 extended this to the positive-gate action dispatchers (`migration
+ * backlog`, `milestone`/`decision`, and `draft`) that an earlier revision of
+ * this note described as a structural gap. Each of their per-action branches
+ * now checks `only()` inside its own branch -- after the action name and its
+ * required reference or positional have matched -- and calls this helper
+ * directly, so an unrecognized flag is named instead of cascading past every
+ * branch to the shared bottom-of-group fallback. A missing reference or an
+ * unknown action name still falls through to that fallback, since there is no
+ * flag to name in those cases (QCLI-270's requirement, carried forward).
  */
 function usageFailure(
   parsed: NonNullable<ReturnType<typeof flags>> | undefined,
@@ -2274,16 +2275,17 @@ export async function runQuest(
       const preservation = preserveSourceIds
         ? { family: sourceFamily as string }
         : undefined;
-      if (
-        action === "preview" &&
-        source &&
-        only(parsed, [
+      const migrationBacklogFallback =
+        "migration backlog requires preview --source, apply --source --digest, status --digest, or rollback --digest.";
+      if (action === "preview" && source) {
+        const previewFlags = [
           "--source",
           "--backlog-dir",
           "--preserve-source-ids",
           "--source-family",
-        ])
-      )
+        ];
+        if (!only(parsed, previewFlags))
+          return usageFailure(parsed, previewFlags, migrationBacklogFallback);
         return output(
           {
             schemaVersion: 1,
@@ -2297,11 +2299,9 @@ export async function runQuest(
           },
           modeFor(parsed),
         );
-      if (
-        action === "apply" &&
-        source &&
-        digest &&
-        only(parsed, [
+      }
+      if (action === "apply" && source && digest) {
+        const applyFlags = [
           "--source",
           "--digest",
           "--backlog-dir",
@@ -2310,8 +2310,9 @@ export async function runQuest(
           "--actor",
           "--actor-kind",
           "--accountable-human",
-        ])
-      ) {
+        ];
+        if (!only(parsed, applyFlags))
+          return usageFailure(parsed, applyFlags, migrationBacklogFallback);
         if (!actor(parsed))
           return failure(
             "denied",
@@ -2331,7 +2332,9 @@ export async function runQuest(
           modeFor(parsed),
         );
       }
-      if (action === "status" && digest && only(parsed, ["--digest"]))
+      if (action === "status" && digest) {
+        if (!only(parsed, ["--digest"]))
+          return usageFailure(parsed, ["--digest"], migrationBacklogFallback);
         return output(
           {
             schemaVersion: 1,
@@ -2340,16 +2343,16 @@ export async function runQuest(
           },
           modeFor(parsed),
         );
-      if (
-        action === "rollback" &&
-        digest &&
-        only(parsed, [
+      }
+      if (action === "rollback" && digest) {
+        const rollbackFlags = [
           "--digest",
           "--actor",
           "--actor-kind",
           "--accountable-human",
-        ])
-      ) {
+        ];
+        if (!only(parsed, rollbackFlags))
+          return usageFailure(parsed, rollbackFlags, migrationBacklogFallback);
         if (!actor(parsed))
           return failure(
             "denied",
@@ -2364,10 +2367,7 @@ export async function runQuest(
           modeFor(parsed),
         );
       }
-      return failure(
-        "usage",
-        "migration backlog requires preview --source, apply --source --digest, status --digest, or rollback --digest.",
-      );
+      return failure("usage", migrationBacklogFallback);
     }
     if (arguments_[0] === "manifest") {
       const parsed = flags(arguments_.slice(1));
@@ -2663,10 +2663,11 @@ export async function runQuest(
       if (!action || !parsed)
         return failure("usage", `${group} requires a valid action.`);
       const planning = await planningService();
-      if (
-        action === "list" &&
-        only(parsed, isMilestone ? ["--include-archived"] : [])
-      ) {
+      const planningFallback = `${group} action is invalid or missing required arguments.`;
+      const listFlags = isMilestone ? ["--include-archived"] : [];
+      if (action === "list") {
+        if (!only(parsed, listFlags))
+          return usageFailure(parsed, listFlags, planningFallback);
         const data = isMilestone
           ? await planning.listMilestones(
               parsed.values.has("--include-archived"),
@@ -2681,7 +2682,9 @@ export async function runQuest(
           modeFor(parsed),
         );
       }
-      if (action === "view" && rest[0] && only(parsed, [])) {
+      if (action === "view" && rest[0]) {
+        if (!only(parsed, []))
+          return usageFailure(parsed, [], planningFallback);
         const data = isMilestone
           ? await planning.viewMilestone(rest[0])
           : await planning.viewDecision(rest[0]);
@@ -2694,10 +2697,8 @@ export async function runQuest(
           modeFor(parsed),
         );
       }
-      if (
-        action === "create" &&
-        rest[0] &&
-        only(parsed, [
+      if (action === "create" && rest[0]) {
+        const createFlags = [
           "--id",
           "--status",
           "--description",
@@ -2707,8 +2708,9 @@ export async function runQuest(
           "--actor",
           "--actor-kind",
           "--accountable-human",
-        ])
-      ) {
+        ];
+        if (!only(parsed, createFlags))
+          return usageFailure(parsed, createFlags, planningFallback);
         const writeActor = actor(parsed);
         if (!writeActor)
           return failure(
@@ -2760,11 +2762,10 @@ export async function runQuest(
           modeFor(parsed),
         );
       }
-      if (
-        action === "delete" &&
-        rest[0] &&
-        only(parsed, ["--actor", "--actor-kind", "--accountable-human"])
-      ) {
+      if (action === "delete" && rest[0]) {
+        const deleteFlags = ["--actor", "--actor-kind", "--accountable-human"];
+        if (!only(parsed, deleteFlags))
+          return usageFailure(parsed, deleteFlags, planningFallback);
         const writeActor = actor(parsed);
         if (!writeActor)
           return failure(
@@ -2783,10 +2784,8 @@ export async function runQuest(
           modeFor(parsed),
         );
       }
-      if (
-        action === "edit" &&
-        rest[0] &&
-        only(parsed, [
+      if (action === "edit" && rest[0]) {
+        const editFlags = [
           "--title",
           "--status",
           "--description",
@@ -2798,8 +2797,9 @@ export async function runQuest(
           "--actor",
           "--actor-kind",
           "--accountable-human",
-        ])
-      ) {
+        ];
+        if (!only(parsed, editFlags))
+          return usageFailure(parsed, editFlags, planningFallback);
         const writeActor = actor(parsed);
         if (!writeActor)
           return failure(
@@ -2864,12 +2864,10 @@ export async function runQuest(
           modeFor(parsed),
         );
       }
-      if (
-        action === "archive" &&
-        isMilestone &&
-        rest[0] &&
-        only(parsed, ["--actor", "--actor-kind", "--accountable-human"])
-      ) {
+      if (action === "archive" && isMilestone && rest[0]) {
+        const archiveFlags = ["--actor", "--actor-kind", "--accountable-human"];
+        if (!only(parsed, archiveFlags))
+          return usageFailure(parsed, archiveFlags, planningFallback);
         const writeActor = actor(parsed);
         if (!writeActor)
           return failure(
@@ -2887,10 +2885,7 @@ export async function runQuest(
           modeFor(parsed),
         );
       }
-      return failure(
-        "usage",
-        `${group} action is invalid or missing required arguments.`,
-      );
+      return failure("usage", planningFallback);
     }
     if (arguments_[0] === "search" && arguments_[1]) {
       const parsed = flags(arguments_.slice(2));
@@ -2949,7 +2944,11 @@ export async function runQuest(
       if (!action || !parsed)
         return failure("usage", "draft requires a valid action.");
       const tasks = await taskService();
-      if (action === "list" && only(parsed, ["--include-archived"]))
+      const draftFallback =
+        "draft action is invalid or missing required arguments.";
+      if (action === "list") {
+        if (!only(parsed, ["--include-archived"]))
+          return usageFailure(parsed, ["--include-archived"], draftFallback);
         return output(
           {
             schemaVersion: 1,
@@ -2960,7 +2959,9 @@ export async function runQuest(
           },
           modeFor(parsed),
         );
-      if (action === "view" && rest[0] && only(parsed, []))
+      }
+      if (action === "view" && rest[0]) {
+        if (!only(parsed, [])) return usageFailure(parsed, [], draftFallback);
         return output(
           {
             schemaVersion: 1,
@@ -2969,10 +2970,9 @@ export async function runQuest(
           },
           modeFor(parsed),
         );
-      if (
-        action === "create" &&
-        rest[0] &&
-        only(parsed, [
+      }
+      if (action === "create" && rest[0]) {
+        const createFlags = [
           "--id",
           "--description",
           "--label",
@@ -2980,8 +2980,9 @@ export async function runQuest(
           "--actor",
           "--actor-kind",
           "--accountable-human",
-        ])
-      ) {
+        ];
+        if (!only(parsed, createFlags))
+          return usageFailure(parsed, createFlags, draftFallback);
         const writeActor = actor(parsed);
         if (!writeActor)
           return failure(
@@ -3007,16 +3008,15 @@ export async function runQuest(
           modeFor(parsed),
         );
       }
-      if (
-        action === "promote" &&
-        rest[0] &&
-        only(parsed, [
+      if (action === "promote" && rest[0]) {
+        const promoteFlags = [
           "--task-id",
           "--actor",
           "--actor-kind",
           "--accountable-human",
-        ])
-      ) {
+        ];
+        if (!only(parsed, promoteFlags))
+          return usageFailure(parsed, promoteFlags, draftFallback);
         const writeActor = actor(parsed);
         if (!writeActor)
           return failure(
@@ -3042,11 +3042,10 @@ export async function runQuest(
           modeFor(parsed),
         );
       }
-      if (
-        action === "archive" &&
-        rest[0] &&
-        only(parsed, ["--actor", "--actor-kind", "--accountable-human"])
-      ) {
+      if (action === "archive" && rest[0]) {
+        const archiveFlags = ["--actor", "--actor-kind", "--accountable-human"];
+        if (!only(parsed, archiveFlags))
+          return usageFailure(parsed, archiveFlags, draftFallback);
         const writeActor = actor(parsed);
         if (!writeActor)
           return failure(
@@ -3062,10 +3061,7 @@ export async function runQuest(
           modeFor(parsed),
         );
       }
-      return failure(
-        "usage",
-        "draft action is invalid or missing required arguments.",
-      );
+      return failure("usage", draftFallback);
     }
     if (arguments_[0] !== "task")
       return failure("usage", "Unknown or missing Quest command.");
