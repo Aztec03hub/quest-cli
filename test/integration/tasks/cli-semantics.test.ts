@@ -938,11 +938,16 @@ test("--ready resolves a parent or dependency that has been archived, instead of
     // dependent correctly stays excluded -- the fix must not throw, but it
     // must not silently treat an unresolved-then-fixed edge as satisfied
     // either.
-    expect(
-      (json(readyAfterDependencyArchive).data as { id: string }[]).map(
-        (task) => task.id,
-      ),
-    ).not.toContain(dependentId);
+    const readyAfterDependencyIds = (
+      json(readyAfterDependencyArchive).data as { id: string }[]
+    ).map((task) => task.id);
+    // QCLI-298: pair the absence assertion with a presence one over the SAME
+    // list and the SAME source, so an empty --ready list fails this row
+    // instead of satisfying it vacuously -- exactly the shape the
+    // parent-archive row above already uses. childId is known ready (asserted
+    // there), and archiving the dependency does not touch it.
+    expect(readyAfterDependencyIds).toContain(childId);
+    expect(readyAfterDependencyIds).not.toContain(dependentId);
   });
 });
 
