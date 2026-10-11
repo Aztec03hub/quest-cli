@@ -197,6 +197,13 @@ export interface TrackerStatusFlow {
   /** QCLI-229: absent when the workspace has pause/start disabled. */
   readonly pausedStatus?: string;
   /**
+   * QCLI-325: false while `pausedStatus` is a BUILT-IN literal that no
+   * user-reachable knob sets (opum-doc relay 570, DEC-172 (4af)). Emitted
+   * beside `pausedStatus` so a consumer can tell from the output alone that
+   * the value is not theirs to change.
+   */
+  readonly pausedStatusConfigurable?: boolean;
+  /**
    * QCLI-331: the second terminal status, reached only by `task close`;
    * absent when the workspace has close disabled.
    */
@@ -577,7 +584,12 @@ export class QuestTrackerClient {
         name: "task status-flow",
         kind: "task.status-flow",
         mutates: false,
-        fields: ["statuses", "terminalStatuses", "pausedStatus"],
+        fields: [
+          "statuses",
+          "terminalStatuses",
+          "pausedStatus",
+          "pausedStatusConfigurable",
+        ],
       },
       {
         name: "task list",

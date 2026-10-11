@@ -224,7 +224,14 @@ export const commandManifest = {
       schemaVersion: 1,
       kind: "task.status-flow",
       mutates: false,
-      fields: ["statuses", "terminalStatuses", "pausedStatus"],
+      // QCLI-325: `pausedStatusConfigurable` is emitted beside `pausedStatus`
+      // (always false for now -- opum-doc relay 570, DEC-172 (4af)).
+      fields: [
+        "statuses",
+        "terminalStatuses",
+        "pausedStatus",
+        "pausedStatusConfigurable",
+      ],
     },
     {
       name: "task binding",

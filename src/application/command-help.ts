@@ -142,7 +142,7 @@ export const commandHelp: Record<
   },
   "task status-flow": {
     summary:
-      'Print the configured task status set, terminal statuses, the paused status (if the workspace has one configured) reached only via `task pause`/`task start`, and the closed status with its resolutions (QCLI-331). `terminalStatuses` lists the ladder\'s terminal statuses and is always a subset of `statuses`: "Done" asserts the outcome happened. `closedStatus` ("Closed" by default) is a second terminal status, reached only by `task close`, saying the task was retired without its outcome (duplicate, superseded, or wont-do); it is NOT in `terminalStatuses` yet and joins it in a later release. Decide whether a task is finished by membership in `terminalStatuses` or equality with `closedStatus`, never by comparing to "Done".',
+      'Print the configured task status set, terminal statuses, the paused status -- a BUILT-IN literal ("Paused"), NOT workspace-configurable, carried with `pausedStatusConfigurable: false` beside it so a reader can tell from this output alone (QCLI-325) -- reached only via `task pause`/`task start`, and the closed status with its resolutions (QCLI-331). `terminalStatuses` lists the ladder\'s terminal statuses and is always a subset of `statuses`: "Done" asserts the outcome happened. `closedStatus` ("Closed" by default) is a second terminal status, reached only by `task close`, saying the task was retired without its outcome (duplicate, superseded, or wont-do); it is NOT in `terminalStatuses` yet and joins it in a later release. Decide whether a task is finished by membership in `terminalStatuses` or equality with `closedStatus`, never by comparing to "Done".',
     usage: "quest task status-flow",
     flags: [],
   },
@@ -409,13 +409,13 @@ export const commandHelp: Record<
   },
   "task pause": {
     summary:
-      'Pause an In Progress task to the configured paused status ("Paused" by default), recording that work was started rather than resetting it. The only way in; `task edit --status` cannot reach the paused status. Disabled if the workspace has no paused status configured.',
+      'Pause an In Progress task to the paused status -- a BUILT-IN literal ("Paused"), NOT workspace-configurable for now (QCLI-325; opum-doc relay 570, DEC-172 (4af)) -- recording that work was started rather than resetting it. The only way in; `task edit --status` cannot reach the paused status. There is no user-reachable knob that sets it, and being built in it is never absent.',
     usage: "quest task pause <id> --actor <name> --actor-kind human",
     flags: [...ACTOR_FLAGS],
   },
   "task start": {
     summary:
-      'Move a task to In Progress from either To Do or the paused status. The only way out of the paused status -- including the retired pre-0.7.0 default "Blocked" on a record parked before the rename, when the workspace does not configure that literal itself (QCLI-302); nothing is migrated silently, and `quest doctor` names such records.',
+      'Move a task to In Progress from either To Do or the paused status. The only way out of the paused status -- including the retired pre-0.7.0 default "Blocked" on a record parked before the rename (the paused literal is BUILT IN and the workspace cannot configure it; QCLI-302, QCLI-325); nothing is migrated silently, and `quest doctor` names such records.',
     usage: "quest task start <id> --actor <name> --actor-kind human",
     flags: [...ACTOR_FLAGS],
   },

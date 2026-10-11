@@ -49,6 +49,8 @@ test("status-flow reports the configured policy and list matches statuses case-i
         statuses: ["To Do", "In Progress", "Done"],
         terminalStatuses: ["Done"],
         pausedStatus: "Paused",
+        // QCLI-325: reported beside pausedStatus, false while it is built in.
+        pausedStatusConfigurable: false,
         // QCLI-331: the second terminal status, reported beside the ladder.
         closedStatus: "Closed",
         resolutions: ["duplicate", "superseded", "wont-do"],

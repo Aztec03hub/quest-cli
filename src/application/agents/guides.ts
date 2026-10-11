@@ -411,8 +411,10 @@ treat a task as finished when its status is in \`terminalStatuses\` OR equals
 later release.
 
 An In Progress task that is paused rather than closed does not go through
-demote: \`quest task pause <id>\` parks it at the configured paused status
-("Paused" by default) without erasing that work was started, and \`quest task
+demote: \`quest task pause <id>\` parks it at the paused status, a BUILT-IN
+literal ("Paused") that is NOT workspace-configurable -- no knob sets it, and
+\`task status-flow\` reports \`pausedStatusConfigurable: false\` beside it
+(QCLI-325) -- without erasing that work was started, and \`quest task
 start <id>\` brings it back to In Progress. A record parked before 0.7.0 sits
 at the retired literal "Blocked" instead; \`quest task start <id>\` is its one
 sanctioned exit too, \`quest doctor\` names any such record, and nothing

@@ -390,6 +390,8 @@ test("status-flow names the closed status and resolutions, and keeps terminalSta
     statuses: ["To Do", "In Progress", "Done"],
     terminalStatuses: ["Done"],
     pausedStatus: "Paused",
+    // QCLI-325: reported beside pausedStatus, false while it is built in.
+    pausedStatusConfigurable: false,
     closedStatus: "Closed",
     resolutions: ["duplicate", "superseded", "wont-do"],
   });
