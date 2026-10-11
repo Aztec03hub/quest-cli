@@ -292,7 +292,7 @@ test("the live manifest is non-empty and matches its result golden", () => {
         "unassigned",
         "unresolved-at-completion",
       ],
-      fields: ["conflict", "id", "proposedBy", "states", "title"],
+      fields: ["conflict", "id", "identity", "proposedBy", "states", "title"],
     },
     {
       name: "task view",

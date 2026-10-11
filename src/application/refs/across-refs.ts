@@ -67,6 +67,28 @@ export interface AcrossRefsState {
   readonly refProvenance: AcrossRefsProvenance;
 }
 
+/**
+ * Whether an entry's states are one task or a genuine id collision (QCLI-432).
+ *
+ * `task` -- every state carries the SAME `createdAt`. A task record is created
+ * once and read identically from every ref it appears on, so its `createdAt`
+ * survives a ref change while a title or status edit does not move it; two
+ * independent `quest task create` calls that minted the same id in two
+ * checkouts (the QCLI-431 shape) do not share a creation stamp. `createdAt` is
+ * chosen over the title deliberately: the same task's title can be edited on a
+ * PR head, which would read as a collision under a title comparison.
+ *
+ * `collision` -- the states carry two or more distinct `createdAt` values, so
+ * they name different records that happen to share an id.
+ *
+ * `unresolved` -- the group has TWO OR MORE states and at least one carries no
+ * `createdAt` (it is optional on the record), so the states cannot be compared.
+ * Reported as a collision the view could not resolve rather than assumed to be
+ * one task. A LONE state is `task` whatever it carries: it has nothing to
+ * collide with.
+ */
+export type AcrossRefsIdentity = "task" | "collision" | "unresolved";
+
 export interface AcrossRefsEntry {
   readonly id: string;
   readonly title: string;
@@ -74,6 +96,14 @@ export interface AcrossRefsEntry {
   readonly proposedBy: string | null;
   /** True when the states carry two or more distinct statuses. */
   readonly conflict: boolean;
+  /**
+   * QCLI-432: whether the states are one task, a genuine collision of two
+   * different records sharing the id, or a collision the discriminator could
+   * not resolve (see {@link AcrossRefsIdentity}). `conflict` above still
+   * reports status divergence WITHIN one task; `identity` reports whether the
+   * states are one task at all.
+   */
+  readonly identity: AcrossRefsIdentity;
   readonly states: readonly AcrossRefsState[];
 }
 
@@ -208,7 +238,23 @@ interface LocatedEntry {
   readonly title: string;
   readonly proposedBy: string | null;
   readonly conflict: boolean;
+  readonly identity: AcrossRefsIdentity;
   readonly states: readonly LocatedState[];
+}
+
+/**
+ * QCLI-432: whether a same-id group is one task, a collision of two different
+ * records, or a collision the discriminator cannot resolve. `createdAt` is the
+ * discriminator (see {@link AcrossRefsIdentity}); a state that carries none is
+ * not comparable, so a group of TWO OR MORE such states is `unresolved` rather
+ * than assumed to be one task. A LONE state has nothing to collide with, so it
+ * is `task` regardless of whether its record carries a createdAt.
+ */
+function identityOf(states: readonly LocatedState[]): AcrossRefsIdentity {
+  if (states.length < 2) return "task";
+  const createdAts = new Set(states.map((state) => state.task.createdAt));
+  if (createdAts.has(undefined)) return "unresolved";
+  return createdAts.size > 1 ? "collision" : "task";
 }
 
 /**
@@ -685,11 +731,14 @@ export class AcrossRefsViewService {
         // The existence ref's title: dev when the id is there, else the first
         // ref in planned order that carries it (the single proposing ref, by
         // the same condition proposedBy uses). Title divergence across refs is
-        // deliberately not modelled -- only status conflicts are.
+        // deliberately not modelled as a conflict -- a title edit is not a
+        // status divergence. A divergence between DIFFERENT records is a
+        // collision, reported by `identity` below rather than by the title.
         title: group.states[0]?.task.title ?? group.id,
         proposedBy:
           !onDev && labels.size === 1 ? ([...labels][0] ?? null) : null,
         conflict: statuses.size > 1,
+        identity: identityOf(group.states),
         states: group.states,
       };
     });
@@ -717,6 +766,7 @@ export class AcrossRefsViewService {
       title: entry.title,
       proposedBy: entry.proposedBy,
       conflict: entry.conflict,
+      identity: entry.identity,
       // Every state of a matched entry is shown, including the ones that did
       // not match the filter: a conflict is only legible with all of it.
       states: entry.states.map((state) => ({

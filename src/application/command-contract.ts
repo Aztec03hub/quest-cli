@@ -318,7 +318,7 @@ export const commandManifest = {
         "unassigned",
         "unresolved-at-completion",
       ],
-      fields: ["conflict", "id", "proposedBy", "states", "title"],
+      fields: ["conflict", "id", "identity", "proposedBy", "states", "title"],
     },
     {
       name: "task view",

@@ -185,6 +185,19 @@ are read from file names, while milestones and decisions share a single
 way -- an unreadable or unparseable document on some unrelated branch is
 skipped, and the remaining refs are still consulted.
 
+**A duplicate id is still possible, and \`--across-refs\` reports it.** The
+allocator consults \`refs\`, never another checkout's uncommitted working tree, so
+two uncommitted \`create\` calls in two checkouts of one repository can both mint
+the same id; committing one closes the window (this is the QCLI-431 shape).
+\`task list --across-refs\` distinguishes that genuine collision from one
+task whose states disagree across refs. An entry's \`identity\` is \`task\` when
+every state carries the same \`createdAt\` (one record, read from several refs),
+\`collision\` when the states carry two or more distinct \`createdAt\` values
+(different records that happen to share an id), and \`unresolved\` when a state
+carries no \`createdAt\` and the two cannot be compared -- an unresolved pair is
+reported as a collision, never assumed to be one task. Resolve a collision by
+landing one record and deleting the other.
+
 ## Type and priority come from the workspace's vocabulary
 
 A workspace can declare the values \`--type\` and \`--priority\` accept, in the

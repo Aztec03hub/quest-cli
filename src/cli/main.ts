@@ -279,8 +279,9 @@ function renderScopeFooter(scope: ListingScope): string {
  * and is deliberately not widened) for incomplete coverage with the coverage
  * object in `input` and the unreadable refs named in the message, 3 when
  * origin or origin/dev is absent, 2 for usage. Exit 5 is never reached from
- * here: an id whose statuses disagree is DATA (exit 0, `conflict: true`), not
- * a command conflict, so 5 stays reserved for write conflicts.
+ * here: an id whose statuses disagree is DATA (exit 0, `conflict: true`), as is
+ * a genuine id collision (`identity: "collision"`, QCLI-432), not a command
+ * conflict, so 5 stays reserved for write conflicts.
  *
  * `--allow-partial` downgrades the exit-6 case to a success envelope with
  * `complete: false` and the unreadable refs still named. It does NOT downgrade

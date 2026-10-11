@@ -136,6 +136,10 @@ interface Fixture {
   readonly prT1Blob: string;
   /** A PR head whose objects exist only in the bare origin (N4). */
   readonly prTwoSha: string;
+  /** QCLI-432: a ref carrying T-1 as a DIFFERENT record (a genuine collision). */
+  readonly collisionSha: string;
+  /** QCLI-432: a ref carrying T-1 with NO createdAt (an unresolvable pair). */
+  readonly unresolvedSha: string;
 }
 
 /**
@@ -201,7 +205,74 @@ async function createFixture(): Promise<Fixture> {
   expect(
     run(work, ["git", "cat-file", "-e", `${prTwoSha}^{commit}`]).exitCode,
   ).not.toBe(0);
-  return { work, origin, devSha, prSha, devT1Blob, prT1Blob, prTwoSha };
+
+  // QCLI-432: a GENUINE id collision -- the same id "T-1" naming a DIFFERENT
+  // record (a different creation stamp and title), the shape two uncommitted
+  // `create` calls in two checkouts produce (QCLI-431). The record is rewritten
+  // on a branch off dev, which is what a second `create` would have committed.
+  const t1Path = join(work, ".quest/tasks/T-1.json");
+  const t1Record = JSON.parse(await readFile(t1Path, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  git(work, "checkout", "-q", "-b", "collision", "dev");
+  await writeFile(
+    t1Path,
+    JSON.stringify({
+      ...t1Record,
+      title: "a different T-1",
+      createdAt: "2031-01-01T00:00:00.000Z",
+    }),
+  );
+  git(work, "add", "-A");
+  git(work, "commit", "-qm", "a different T-1 (id collision)");
+  const collisionSha = git(work, "rev-parse", "collision");
+
+  // QCLI-432 AC2: a record carrying NO createdAt cannot be compared, so the
+  // pair is an UNRESOLVED collision rather than assumed to be one task.
+  git(work, "checkout", "-q", "-b", "unresolved", "dev");
+  const withoutCreatedAt = { ...t1Record };
+  delete withoutCreatedAt.createdAt;
+  await writeFile(t1Path, JSON.stringify(withoutCreatedAt));
+  // A LONE record with no createdAt, on this ref only: id T-9 exists nowhere
+  // else, so the view sees a single state and must call it `task`, not
+  // `unresolved`. This is what pins the `states.length < 2` guard -- without
+  // it a lone record lacking createdAt would read as an unresolved collision.
+  const t2Record = JSON.parse(
+    await readFile(join(work, ".quest/tasks/T-2.json"), "utf8"),
+  ) as Record<string, unknown>;
+  const loneNoCreatedAt: Record<string, unknown> = { ...t2Record, id: "T-9" };
+  delete loneNoCreatedAt.createdAt;
+  await writeFile(
+    join(work, ".quest/tasks/T-9.json"),
+    JSON.stringify(loneNoCreatedAt),
+  );
+  git(work, "add", "-A");
+  git(work, "commit", "-qm", "a T-1 with no createdAt, and a lone T-9");
+  const unresolvedSha = git(work, "rev-parse", "unresolved");
+  git(work, "checkout", "-q", "dev");
+
+  git(
+    origin,
+    "fetch",
+    "-q",
+    work,
+    "refs/heads/collision",
+    "refs/heads/unresolved",
+  );
+  git(origin, "update-ref", "refs/pull/3/head", collisionSha);
+  git(origin, "update-ref", "refs/pull/4/head", unresolvedSha);
+  return {
+    work,
+    origin,
+    devSha,
+    prSha,
+    devT1Blob,
+    prT1Blob,
+    prTwoSha,
+    collisionSha,
+    unresolvedSha,
+  };
 }
 
 let fixture: Fixture;
@@ -233,6 +304,26 @@ function prOne(f: Fixture): DiscoveredPullRequest {
     headRefName: "feature",
     headRefOid: f.prSha,
     url: "https://github.com/opum-ai/quest-cli/pull/1",
+  };
+}
+
+/** QCLI-432: the PR head that carries T-1 as a different record. */
+function prThree(f: Fixture): DiscoveredPullRequest {
+  return {
+    number: 3,
+    headRefName: "collision",
+    headRefOid: f.collisionSha,
+    url: "https://github.com/opum-ai/quest-cli/pull/3",
+  };
+}
+
+/** QCLI-432: the PR head carrying T-1 with no createdAt. */
+function prFour(f: Fixture): DiscoveredPullRequest {
+  return {
+    number: 4,
+    headRefName: "unresolved",
+    headRefOid: f.unresolvedSha,
+    url: "https://github.com/opum-ai/quest-cli/pull/4",
   };
 }
 
@@ -290,6 +381,10 @@ function entry(
 }
 
 const openPr = (f: Fixture) => discovery({ pullRequests: [prOne(f)] });
+/** QCLI-432: dev plus the PR head carrying T-1 as a different record. */
+const collisionPr = (f: Fixture) => discovery({ pullRequests: [prThree(f)] });
+/** QCLI-432: dev plus the PR head carrying T-1 with no createdAt. */
+const unresolvedPr = (f: Fixture) => discovery({ pullRequests: [prFour(f)] });
 
 test("a complete view reads origin/dev and every open PR head, and a dev state carries pullRequest null (QCLI-417 AC2)", async () => {
   const result = await view(fixture, openPr(fixture));
@@ -343,6 +438,9 @@ test("a record that exists only on a PR head is proposed by that PR (QCLI-417 AC
   const proposed = entry(result.entries, "T-3");
   expect(proposed.proposedBy).toBe("opum-ai/quest-cli#1");
   expect(proposed.title).toBe("only on the pr head");
+  // QCLI-432: a lone state has nothing to collide with, so it is one task
+  // whatever its record carries.
+  expect(proposed.identity).toBe("task");
   expect(proposed.states).toEqual([
     {
       status: "To Do",
@@ -361,6 +459,9 @@ test("two refs disagreeing about a status list every state with its provenance a
   const result = await view(fixture, openPr(fixture));
   const conflict = entry(result.entries, "T-1");
   expect(conflict.conflict).toBe(true);
+  // QCLI-432: the SAME record on both refs -- one createdAt -- is one task
+  // whose states disagree, NOT a collision. `identity` distinguishes them.
+  expect(conflict.identity).toBe("task");
   expect(conflict.states.map((state) => state.status)).toEqual([
     "To Do",
     "In Progress",
@@ -369,10 +470,49 @@ test("two refs disagreeing about a status list every state with its provenance a
   expect(Object.keys(conflict).sort()).toEqual([
     "conflict",
     "id",
+    "identity",
     "proposedBy",
     "states",
     "title",
   ]);
+}, 60_000);
+
+test("a genuine id collision -- two different records sharing an id -- is reported, not folded into one task (QCLI-432 AC1)", async () => {
+  const result = await view(fixture, collisionPr(fixture));
+  const collision = entry(result.entries, "T-1");
+  // The same id on two refs, but two records: not one task with disagreeing
+  // states.
+  expect(collision.identity).toBe("collision");
+  // The two states really are different records' bytes, read from dev and the
+  // colliding PR head -- the view is not inventing the distinction.
+  expect(fixture.devT1Blob).not.toBe(
+    git(fixture.work, "rev-parse", "collision:.quest/tasks/T-1.json"),
+  );
+  // Both states are still listed, one per ref, with their own provenance.
+  expect(collision.states.map((state) => state.refProvenance.ref)).toEqual([
+    "origin/dev",
+    "refs/pull/3/head",
+  ]);
+}, 60_000);
+
+test("a pair the discriminator cannot compare is an unresolved collision, never assumed one task (QCLI-432 AC2)", async () => {
+  const result = await view(fixture, unresolvedPr(fixture));
+  const unresolved = entry(result.entries, "T-1");
+  expect(unresolved.identity).toBe("unresolved");
+  expect(unresolved.states.map((state) => state.refProvenance.ref)).toEqual([
+    "origin/dev",
+    "refs/pull/4/head",
+  ]);
+}, 60_000);
+
+test("a LONE record with no createdAt is one task, not an unresolved collision (QCLI-432 AC2)", async () => {
+  const result = await view(fixture, unresolvedPr(fixture));
+  const lone = entry(result.entries, "T-9");
+  // One state cannot collide with anything, so the missing createdAt does not
+  // make it unresolved. This is the case that fails if the `states.length < 2`
+  // guard is removed -- unlike a lone state that carries a createdAt.
+  expect(lone.identity).toBe("task");
+  expect(lone.states).toHaveLength(1);
 }, 60_000);
 
 test("an id both refs carry identically is NOT marked as a conflict (negative control for AC3)", async () => {
