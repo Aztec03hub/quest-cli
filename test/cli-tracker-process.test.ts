@@ -1252,6 +1252,15 @@ test("every manifest payload command renders more than its kind in plain mode", 
     expect(stdout, entry.name).toBeDefined();
     expect(stdout, entry.name).not.toBe(`${entry.kind}\n`);
     expect(stdout?.trim(), entry.name).not.toBe("");
+    // QCLI-273: the plain renderer must never leak an UNSET optional field as
+    // the literal word `undefined` -- QCLI-272's divergence, where --json
+    // (JSON.stringify drops an undefined-valued property) was right and
+    // --plain (Object.entries keeps it) printed `undefined`. This harness
+    // already runs EVERY manifest payload command in --plain and --json, so
+    // this one assertion closes the class structurally for all of them, which
+    // is why the per-test pairing helper this task weighed was declined (see
+    // the task record).
+    expect(stdout ?? "", entry.name).not.toContain("undefined");
   }
 }, 15_000);
 
