@@ -54,10 +54,10 @@ test("task status-flow output says the paused status is built-in and not user-ch
     expect(flow.data.pausedStatusConfigurable).toBe(false);
     // QCLI-325: the new key is on a MACHINE surface, so it must be DECLARED in
     // the manifest or the change ships the same under-declaration class
-    // QCLI-461 closed for task list/view/search. No existing test compares
-    // status-flow's declared `fields` to the keys it emits, so it is pinned
-    // here. (A full emitted-subset-of-declared check for status-flow is a
-    // separate gap -- closedStatus and resolutions are still undeclared.)
+    // QCLI-461 closed for task list/view/search. This pins the two keys
+    // QCLI-325 added. QCLI-482 has since closed the status-flow gap this note
+    // used to leave open: closedStatus and resolutions are now declared, and
+    // the block below compares the declared list to the emitted key set.
     const declared =
       commandManifest.commands.find(
         (command) => command.name === "task status-flow",
@@ -98,7 +98,7 @@ test("task status-flow output says the paused status is built-in and not user-ch
  * the other three share would genuinely cover it; adding it to the old sites
  * list would have asserted a phrase it does not contain.
  *
- * `before` is that site's real pre-QCLI-325 sentence, kept so the guard can be
+ * `before` is that site's real pre-QCLI-325 text, kept so the guard can be
  * run against the wording it replaced (QCLI-480 AC1: both directions measured).
  */
 const PAUSED_SITES = [
@@ -114,7 +114,7 @@ const PAUSED_SITES = [
     drift: /no paused status configured/i,
     fixed: /not workspace-configurable/i,
     before:
-      'Pause an In Progress task to the configured paused status ("Paused" by default), recording that work was started rather than resetting it. Disabled if the workspace has no paused status configured.',
+      'Pause an In Progress task to the configured paused status ("Paused" by default), recording that work was started rather than resetting it. The only way in; `task edit --status` cannot reach the paused status. Disabled if the workspace has no paused status configured.',
   },
   {
     name: "task-finalization guide",

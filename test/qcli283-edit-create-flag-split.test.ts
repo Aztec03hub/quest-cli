@@ -219,3 +219,141 @@ test("the manifest NAMES the split via its existing flag vocabularies, with no n
     await rm(root, { recursive: true, force: true });
   }
 });
+
+/**
+ * QCLI-484 (DEC-172 (4aq)). Three more create-side spellings fell through to
+ * the generic refusal with no edit-side redirect, so a caller moving from
+ * create to edit was told only that the flag was unrecognized.
+ */
+test("each create-only spelling edit refuses names its edit-side flags (QCLI-484 AC1)", async () => {
+  const root = await workspace();
+  try {
+    const cases = [
+      ["--assignee", "person-2", ["--add-assignee", "--remove-assignee"]],
+      ["--dependency", "T-1", ["--add-dependency", "--remove-dependency"]],
+      [
+        "--modified-file",
+        "src/x.ts",
+        ["--add-modified-file", "--remove-modified-file"],
+      ],
+    ] as const;
+
+    for (const [flag, value, replacements] of cases) {
+      const refused = quest(root, [
+        "task",
+        "edit",
+        "T-1",
+        flag,
+        value,
+        ...ACTOR,
+        "--json",
+      ]);
+      // The real exit-2 repro, not a silent success.
+      expect(refused.exitCode, `${flag} exits 2`).toBe(2);
+      const message = refusal(refused);
+      expect(message, `${flag} names itself`).toContain(flag);
+      for (const replacement of replacements)
+        expect(message, `${flag} names ${replacement}`).toContain(replacement);
+      expect(message, "the discard sentence").toContain("Nothing was written");
+      // ...and with no OTHER unknown flag, it is not re-listed as
+      // "Unrecognized" either: a lone create-only spelling is redirected,
+      // never doubled (QCLI-484 round-1 review).
+      expect(message, `${flag} is not re-listed`).not.toContain("Unrecognized");
+    }
+
+    // Atomicity: nothing from any of the three landed.
+    const viewed = JSON.parse(
+      quest(root, ["task", "view", "T-1", "--json"]).stdout,
+    ).data;
+    expect(viewed.assignees ?? []).toEqual([]);
+    expect(viewed.dependencies ?? []).toEqual([]);
+    expect(viewed.modifiedFiles ?? []).toEqual([]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a create-only spelling does not hide another unrecognized flag (QCLI-484 AC4)", async () => {
+  const root = await workspace();
+  try {
+    const refused = quest(root, [
+      "task",
+      "edit",
+      "T-1",
+      "--label",
+      "release",
+      "--badflag",
+      "y",
+      ...ACTOR,
+      "--json",
+    ]);
+    expect(refused.exitCode).toBe(2);
+    const message = refusal(refused);
+    // The create-only spelling's redirect...
+    expect(message).toContain("--label");
+    expect(message).toContain("--add-label");
+    // ...AND every other unrecognized flag, in the SAME refusal, so fixing the
+    // first does not merely move the caller to the second run.
+    expect(message).toContain("--badflag");
+    expect(message).toContain("Unrecognized flag");
+    expect(message).toContain("Nothing was written");
+    // ...and the create-only spelling is NOT re-listed: the clause names only
+    // the genuinely-unknown flag. Re-listing --label is QCLI-484's round-1
+    // review finding -- the message named it a second time.
+    expect(message.match(/Unrecognized flags? [^.]*\./)?.[0]).toBe(
+      "Unrecognized flag --badflag.",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the docblock and the help name exactly the create-only spellings the map holds (QCLI-484 AC2, AC3)", async () => {
+  const help = Bun.spawnSync(["bun", MAIN, "help", "task", "edit", "--json"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expect(help.exitCode).toBe(0);
+  const summary = JSON.parse(help.stdout.toString()).data.commands[0]
+    .summary as string;
+
+  // The map is the authority: read its key set from the source rather than
+  // restating it, so a key added or dropped there moves this test.
+  const source = await Bun.file(
+    new URL("../src/cli/main.ts", import.meta.url).pathname,
+  ).text();
+  const at = source.indexOf("const EDIT_FLAG_REDIRECTS");
+  const block = source.slice(at, source.indexOf("};", at));
+  const docblock = source.slice(source.lastIndexOf("/**", at), at);
+  const mapKeys = [...block.matchAll(/^\s*"(--[a-z-]+)":/gmu)]
+    .map((match) => match[1])
+    .sort();
+  expect(mapKeys).toEqual([
+    "--assignee",
+    "--dependency",
+    "--label",
+    "--modified-file",
+    "--reference",
+  ]);
+
+  for (const key of mapKeys) {
+    expect(docblock, `the docblock names ${key}`).toContain(key);
+    expect(summary, `the help names ${key}`).toContain(key);
+  }
+  // The help names the edit-side replacements too, so both halves of the split
+  // read from it.
+  for (const flag of [
+    "--labels",
+    "--add-label",
+    "--remove-label",
+    "--add-reference",
+    "--remove-reference",
+    "--add-assignee",
+    "--remove-assignee",
+    "--add-dependency",
+    "--remove-dependency",
+    "--add-modified-file",
+    "--remove-modified-file",
+  ])
+    expect(summary, `the help names ${flag}`).toContain(flag);
+});

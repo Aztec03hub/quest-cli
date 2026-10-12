@@ -292,13 +292,16 @@ export const commandHelp: Record<
   "task edit": {
     summary:
       "Edit an existing task's fields, or append/remove list items. " +
-      "CREATE/EDIT NAMING SPLIT (QCLI-283): `task create` and `task edit` spell several " +
+      "CREATE/EDIT NAMING SPLIT (QCLI-283, QCLI-484): `task create` and `task edit` spell several " +
       "list fields differently, and this help describes the EDIT side. Create sets a list " +
-      "wholesale with --label and --reference; edit MUTATES it with --labels (replace the whole " +
-      "list, one JSON array), --add-label/--remove-label, and --add-reference/--remove-reference. " +
-      "Running `task edit` with a create-only spelling such as --label or --reference is a usage " +
-      "error (exit 2) that names the edit-side flag to use instead -- these are deliberately NOT " +
-      "accepted as aliases here, so the split is taught rather than papered over. " +
+      "wholesale with --label, --reference, --assignee, --dependency and --modified-file; edit " +
+      "MUTATES it with --labels (replace the whole list, one JSON array), " +
+      "--add-label/--remove-label, --add-reference/--remove-reference, " +
+      "--add-assignee/--remove-assignee, --add-dependency/--remove-dependency, and " +
+      "--add-modified-file/--remove-modified-file. Running `task edit` with ANY of those five " +
+      "create-only spellings -- --label, --reference, --assignee, --dependency, --modified-file " +
+      "-- is a usage error (exit 2) that names the edit-side flag(s) to use instead; these are " +
+      "deliberately NOT accepted as aliases here, so the split is taught rather than papered over. " +
       "Checklist positions are 1-based and reader-facing: --check-ac/--uncheck-ac/--remove-ac " +
       "and the --*-dod equivalents address an item by the `position` field `quest task view` " +
       "(and every other checklist-bearing command) prints on each acceptanceCriteria/" +

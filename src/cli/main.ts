@@ -807,6 +807,12 @@ function flagShapedPositional(
 const EDIT_FLAG_REDIRECTS: Readonly<Record<string, string>> = {
   "--label": "--labels (replace all), --add-label, or --remove-label",
   "--reference": "--add-reference or --remove-reference",
+  // QCLI-484: the three create-only spellings that still fell through to the
+  // generic refusal. Every key here is named in the `task edit` help, and the
+  // help names no key this map does not hold.
+  "--assignee": "--add-assignee or --remove-assignee",
+  "--dependency": "--add-dependency or --remove-dependency",
+  "--modified-file": "--add-modified-file or --remove-modified-file",
 };
 
 /**
@@ -817,6 +823,7 @@ const EDIT_FLAG_REDIRECTS: Readonly<Record<string, string>> = {
  */
 function createSpellingFailure(
   parsed: NonNullable<ReturnType<typeof flags>>,
+  allowed: readonly string[],
 ): InvocationResult | undefined {
   const offending = Object.keys(EDIT_FLAG_REDIRECTS).filter((flag) =>
     parsed.values.has(flag),
@@ -826,9 +833,26 @@ function createSpellingFailure(
     (flag) =>
       `\`task edit\` does not accept ${flag}; that is \`task create\`'s spelling and \`task edit\` uses ${EDIT_FLAG_REDIRECTS[flag]} instead.`,
   );
+  // QCLI-484 (AC4): the create-only spelling must not HIDE the other
+  // unrecognized flags. Before this, returning here meant
+  // `--label x --badflag y` named only `--label`, so a caller fixing that one
+  // hit the generic refusal on the next run. Both are named in one refusal.
+  //
+  // A redirected spelling is NOT re-listed as "Unrecognized" (QCLI-484
+  // round-1 review): every key of EDIT_FLAG_REDIRECTS is absent from
+  // `allowed` by construction, so the generic list would name it a SECOND
+  // time, contradicting the redirect sentence just emitted. The clause names
+  // only the genuinely-unknown flags -- "every OTHER unrecognized flag" (AC4).
+  const unknown = unknownFlags(parsed, allowed).filter(
+    (flag) => !(flag in EDIT_FLAG_REDIRECTS),
+  );
+  const alsoUnrecognized =
+    unknown.length === 0
+      ? ""
+      : ` Unrecognized ${unknown.length === 1 ? "flag" : "flags"} ${unknown.join(", ")}.`;
   return failure(
     "usage",
-    `${sentences.join(" ")} Nothing was written: the rest of this command was not applied either.`,
+    `${sentences.join(" ")}${alsoUnrecognized} Nothing was written: the rest of this command was not applied either.`,
   );
 }
 
@@ -4195,9 +4219,11 @@ export async function runQuest(
           editFlags,
           "task edit received invalid arguments.",
         );
-      // QCLI-283: a create-only spelling (--label/--reference) is refused with
-      // the edit-side flag named, BEFORE the generic unrecognized-flag path.
-      const createSpelled = createSpellingFailure(parsed);
+      // QCLI-283: a create-only spelling (--label/--reference and, since
+      // QCLI-484, --assignee/--dependency/--modified-file) is refused with the
+      // edit-side flag named, BEFORE the generic unrecognized-flag path -- and
+      // it names any OTHER unrecognized flag in the same refusal (QCLI-484 AC4).
+      const createSpelled = createSpellingFailure(parsed, editFlags);
       if (createSpelled) return createSpelled;
       if (!only(parsed, editFlags))
         return usageFailure(

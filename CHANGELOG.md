@@ -50,6 +50,18 @@ dated by its own tag. No date here is inferred (QCLI-398).
 
 ### Fixed
 
+- **`task edit` names the edit-side flag for three more create-only spellings,
+  and no longer hides another unrecognized flag behind one of them** (QCLI-484;
+  opum-doc DEC-172 (4aq)). `--assignee`, `--dependency` and `--modified-file`
+  are `task create`'s spellings; `task edit` now refuses them at exit 2 naming
+  `--add-assignee`/`--remove-assignee`, `--add-dependency`/`--remove-dependency`
+  and `--add-modified-file`/`--remove-modified-file`, and writes nothing -- the
+  same shape QCLI-283 gave `--label` and `--reference`, with no alias and no new
+  manifest field. A create-only spelling in an invocation that also carries an
+  unrecognized flag now names BOTH in one refusal, so fixing the first no longer
+  merely moves the caller to the next run. The `task edit` help names the whole
+  split.
+
 - **`migration backlog preview`/`apply` now name `--source` by what it takes --
   a project directory path -- instead of `<project>`** (QCLI-437). `--source` is
   the Backlog.md project root the importer `realpath`s, not a project name, so
