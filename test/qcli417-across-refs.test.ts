@@ -919,7 +919,15 @@ test("the working tree is not the view: a record that exists only uncommitted is
   const envelope = JSON.parse(across.stdout) as {
     data: readonly { id: string }[];
   };
-  expect(envelope.data.map((row) => row.id)).not.toContain(id);
+  const acrossIds = envelope.data.map((row) => row.id);
+  // QCLI-472: the absence below is a claim about THIS list, so it is paired
+  // with a positive over the same list and the same source. Without it an empty
+  // across-refs view satisfies the row vacuously -- the only other positive is
+  // over `local.data`, a plain `task list`, which is a different source and
+  // establishes nothing about whether the across-refs view is populated at all.
+  // `dev` carries T-1 and T-2 (see createFixture), so the view must carry T-1.
+  expect(acrossIds).toContain("T-1");
+  expect(acrossIds).not.toContain(id);
   // Leave the shared fixture as it was found.
   await rm(join(fixture.work, `.quest/tasks/${id}.json`), { force: true });
 }, 60_000);
