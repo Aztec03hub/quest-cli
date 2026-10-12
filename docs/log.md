@@ -277,6 +277,8 @@
 - 2026-10-02T18:18:40-05:00 f505d2e981d932c9df7691283ff1e0a3adaeefe9 chore(QCLI-433): pause the task for the recycle and point at QCLI-434 (#488)
 - 2026-10-06T21:39:20-05:00 ef9c2b44e4d2f39ac05b3c475a7432420aa689f2 chore(QCLI-433): regenerate .lore schemas and managed blocks for lore 0.13.0 (DEC-169)
 - 2026-10-06T22:27:01-05:00 598653c4f26da073202377d90eef92aa051d912f chore(QCLI-433): bump quest to 0.13.0 and record the board mod (#486)
+- 2026-10-07T12:31:14-05:00 04c9dbb2723a270ac118bf88a0aa087e32f4f1eb chore(QCLI-433): complete the 0.13.0 release task (#536)
+- 2026-10-11T23:40:01-05:00 5da788909eebd9ed223652c2692c8da730973eb6 docs(QCLI-464): name the gate set each release route runs
 
 ## docs/adr
 
@@ -330,6 +332,7 @@
 - 2026-09-28T10:30:13-05:00 bee163610791547e7bb6cefc48f967daaf8bab2d feat(QCLI-328): refuse a breaking CHANGELOG section at a patch-level bump (#367)
 - 2026-09-28T12:04:10-05:00 b1c52d0fd5a21c8b62a01b55ea533729add9dc3d feat(QCLI-403): the breaking-bump check reads lore-cli's CHANGELOG by ref (#383)
 - 2026-10-04T19:11:13-05:00 0624458e8da144ff6fe80478a756a736c7becf5b feat(QCLI-296): derive dev version from describe distance behind QUEST_RELEASE_BUILD (#516)
+- 2026-10-11T16:49:44-05:00 7570463aca90e71faea70ef478f8d9c6ffe963e0 feat(QCLI-305): install stage-two platform candidates from a qualification run (#576)
 
 ## docs/specs
 

@@ -449,8 +449,11 @@ changes step 1, which is required either way.
    successful verification permits availability or install documentation.
 
    If the CI/OIDC publish path is unavailable (see "Publishing locally when
-   CI cannot" below), `scripts/publish-release.mjs` performs the same
-   fail-closed, receipt-gated publish from an operator's own machine.
+   CI cannot" below), `scripts/publish-release.mjs` performs a fail-closed,
+   receipt-gated publish from an operator's own machine. It does NOT run the
+   same gate set as `release.yml`: two of that workflow's gates are CI-only
+   and must be run by hand on the local route. The enumeration is in "The
+   gate set each route runs" below.
 
 8. Confirm the receipt describes what the registry actually serves, then hand
    it to downstream qualification:
@@ -560,10 +563,13 @@ still built and committed locally.
 `scripts/publish-release.mjs` exists for exactly the case the CI/OIDC path
 cannot cover -- trusted publishing not yet configured, or (as observed
 2026-09) GitHub's org-wide immutable-subject-claim policy rejecting the
-subject shape npm Trusted Publishing expects. It is gated the same way CI is:
-`--receipt <path>` is required, and the receipt must bind the exact commit
-and version being published (`validateReceipt`, re-deriving every digest from
-the artifacts on disk rather than trusting the document).
+subject shape npm Trusted Publishing expects. It shares CI's fail-closed,
+receipt-gated posture, but not CI's full gate set: `release.yml` runs two
+gates the local script does not, so a reader who takes this route must run
+those by hand. "The gate set each route runs" below enumerates every gate of
+each route. `--receipt <path>` is required, and the receipt must bind the
+exact commit and version being published (`validateReceipt`, re-deriving
+every digest from the artifacts on disk rather than trusting the document).
 
 `--qualification-run <id>` is also required (QCLI-366; opum-doc ADR
 `harden-fleet-ci-against-a-single-runner-outage-and-unqualified-publication`,
@@ -703,6 +709,59 @@ then tens of seconds, then tens of minutes). **A timeout here is reported as
 registry lag, not a failed release** -- the write already succeeded, and
 running `npm unpublish` in response is destructive, available for 72 hours,
 and would remove a release that is not actually broken.
+
+### The gate set each route runs
+
+`release.yml` and `scripts/publish-release.mjs` are **not** the same gate set.
+The local script imports and runs neither `scripts/qualification/release-provenance.mjs`
+(`--pre` and `--post`) nor `scripts/check-breaking-bump.mjs --pair`, both of
+which `release.yml` runs; a reader who took the local route believing the old
+"same gates" wording unknowingly dropped two CI gates. The table lists every
+gate `release.yml` runs, in workflow order, and where the local route covers
+it. A reader taking the local route must run the CI-only rows by hand, or the
+release ships having silently skipped them.
+
+| `release.yml` step | Gate | Local route (`publish-release.mjs`) |
+|---|---|---|
+| Assert the npm OIDC floor | The asserted gate is the npm floor, >= 11.5.1; Node is pinned by `setup-node` (`node-version: 24`) rather than asserted | Not applicable: the local route authenticates with a stored token or an interactive OTP, never OIDC. |
+| Fetch the native-execution receipt for this commit | `gh run list`/`gh run download` the successful `prepublication-qualification.yml` run at the released commit, both the `native-execution-receipt` and the `quest-candidate-bundle` | Partly covered: the script downloads the `quest-candidate-bundle` itself and proves its provenance from the run record, given only `--qualification-run <id>`. Only the native-execution receipt is operator-supplied, as `--receipt <path>`. |
+| Gate on the receipt | `native-execution-receipt.mjs --require` | Covered: `validateReceipt`, re-deriving every digest from the artifacts on disk. |
+| Gate on the opum-cli-e2e qualification receipt | `e2e-receipt.mjs --require` -- binds version, commit, run id, all seven tarball sha256, and the launcher substitution | Covered: `requireQualification`, the same receipt and the same substitution re-run on the downloaded bundle. |
+| Gate on release provenance | `release-provenance.mjs --pre` -- tag, commit and `package.json` agree, and the commit is reachable from `main` | **Not run -- run it by hand** (below). |
+| Gate on lore/quest version parity | `version-parity.mjs --require` | Covered: `requireVersionParity`. |
+| Gate the pair's bump level on both CHANGELOGs | `check-breaking-bump.mjs --pair` | **Not run -- run it by hand** (below). |
+| Preflight the publish credential | `npm whoami` (`continue-on-error`) | Replaced: the local script's `Auth:` line and token shape-check report the credential state instead. |
+| Publish the platform packages | six `npm publish ... --tag release-candidate` | Covered: same staged tarballs, byte-for-byte. |
+| Gate -- all six platform packages must resolve for a consumer | `require-platform-visibility.mjs` | Covered: the script gates the wrapper publish on the same anonymous read. |
+| Publish the wrapper | `npm publish ... --tag release-candidate` | Covered: same. |
+| Verify the registry serves what was published | npm-read loop, then `native-execution-receipt.mjs --verify-published` | Covered: `waitForPublished`, the same receipt-against-registry comparison. |
+| Verify npm serves the qualified bundle, tarball for tarball | `bundle-integrity.mjs` | Covered: `verifyRegistryHoldsBundle`. |
+| Verify the registry's provenance matches what was released | `release-provenance.mjs --post` | **Not run -- run it by hand** (below). |
+
+**The CI-only gates, run by hand.** These run only inside `release.yml`, so the
+local route must run them itself, from the release commit's checkout:
+
+```sh
+# Before publishing: the tag, the commit and package.json must agree, and the
+# commit must be reachable from origin/main. --pre reads GITHUB_REF, so it must
+# name the tag being released; GITHUB_SHA otherwise defaults to HEAD.
+GITHUB_REF=refs/tags/v<version> node scripts/qualification/release-provenance.mjs --pre
+
+# Before publishing: a breaking CHANGELOG heading in EITHER repository forces at
+# least a minor bump of the pair. --pair reads lore-cli's CHANGELOG.md at its
+# main through `gh api`, so it needs an authenticated `gh`.
+node scripts/check-breaking-bump.mjs --pair
+
+# After publishing: the registry's own gitHead for the staged version must be
+# the commit it was released from. --version names the launcher's X-rc.N,
+# because the platforms stage at X and the wrapper at X-rc.N (QCLI-399).
+GITHUB_SHA=<released-commit> node scripts/qualification/release-provenance.mjs --post --version <X-rc.N>
+```
+
+Found while running the 0.13.0 publish (main `5996e24a`), where both gates were
+run by hand precisely because the local route does not: `release-provenance --pre`
+with `GITHUB_REF=refs/tags/v0.13.0`, and `check-breaking-bump --pair`, both
+exit 0.
 
 ## Anchor every artifact claim to stored bytes
 
