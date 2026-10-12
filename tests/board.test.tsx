@@ -1965,9 +1965,10 @@ test("a stored state suppresses repeats after a reload", async ($, on) => {
 });
 
 test("what moved while no session was running arrives as one summary", async ($, on) => {
-  // The clock is answered, never moved: everything this test asserts happens on
-  // the first check of the session, which is the one the restart itself runs.
-  mock.clock(on, { now: ALERTS_NOW });
+  // The clock is answered except for the one advance at the end: the summary
+  // this test is about is the first check of the session, which is the one the
+  // restart itself runs.
+  const clock = mock.clock(on, { now: ALERTS_NOW });
   mock.store(on, {
     [ALERTS_KEY]: {
       decisions: { "quest-cli:DEC-9": "accepted" },
@@ -2000,17 +2001,24 @@ test("what moved while no session was running arrives as one summary", async ($,
 
   const ui = await mountAlertPane($);
   // The first check of the session compares against what the last session
-  // stored, and two updates plus a waiting decision are one line rather than
-  // three toasts. Two, not three: the tick's budget is three children and its
-  // two reads already spend two, so exactly ONE departure can be told by
-  // looking at it -- QCLI-2 is, and QCLI-3 waits for the next tick.
+  // stored, and one update plus a waiting decision are one line rather than
+  // two toasts. ONE, not two: this fixture's repository root is its own, so the
+  // tick has to NAME it -- one child -- and its two reads spend the other two,
+  // leaving no room for the `task view` that would tell the departure (QCLI-2)
+  // from a task simply gone (QCLI-494, DEC-172 (4bl)). In a real session
+  // `session.start` resolves first, so this cost falls on the mount-only shape.
   expect(toasts).toEqual([
     {
-      text: "While you were away: 1 decision waiting, 2 updates",
+      text: "While you were away: 1 decision waiting, 1 update",
       timeoutMs: 8_000,
     },
   ]);
   expect(statuses).toEqual(["Quest: 1 decision waiting"]);
+
+  // The departure the first tick could not afford lands on the next one, with
+  // the repository already named, so what the summary left out is not lost.
+  await clock.advance(ALERTS_MS);
+  expect(toasts.at(-1)?.text).toBe("QCLI-2 closed (superseded) in quest-cli");
   await ui.unmount();
 });
 
@@ -2191,4 +2199,173 @@ test("a decision toast names the repository, because the id does not", () => {
   // would say which decision it is about.
   expect(changes.waiting.map((one) => one.id)).toEqual(["DEC-3", "DEC-3"]);
   expect(toasts[0]?.text).not.toBe(toasts[1]?.text);
+});
+
+/**
+ * QCLI-494 AC1 (DEC-172 (4bl)). The auto-start gate, pinned in BOTH
+ * directions. The third case is the one that matters most: a gate that read the
+ * wrong field, or read it inverted, would start nothing for every PERSON --
+ * and the two gated cases alone would still pass.
+ *
+ * `session.end` runs first in each case because the gate's own unit is one
+ * PROCESS: a clock a previous case left running would otherwise tick inside
+ * this one, and `session.end` is what cancels it.
+ */
+test("the auto-start gate starts nothing when gated, and a person's session does (QCLI-494 AC1)", async ($, on) => {
+  const opens: Open[] = [];
+  const asked: string[][] = [];
+  const env: Record<string, string> = {};
+  const clock = mock.clock(on, { now: Date.UTC(2026, 9, 2, 4, 30, 0) });
+  mock.store(on);
+  // ONE `env.get`, answering from a record a case can change: the kit refuses a
+  // second registration of the same hook, so `mockBoard`'s pinned empty env
+  // could not be overridden afterwards -- and the CLAUDECODE arm needs exactly
+  // that.
+  on("env.get", async (_$, e) => ({ value: env[e.name] }));
+  // The gate's own unit is one PROCESS, so each case ends the standing session
+  // before starting its own: `session.end` is what cancels a clock a previous
+  // case registered.
+  on("session.end", async (_$, e) => ({ sessionId: e.sessionId }));
+  on("session.root", async () => ({ value: "/repos/opum-cli" }));
+  on("session.start", async (_$, e) => ({ cwd: e.cwd }));
+  on("tool.register", async (_$, e) => ({
+    value: { tool: `mcp__opum-quest__${e.name}` },
+  }));
+  on("process.run", async (_$, e) => {
+    asked.push([e.init?.cwd ?? "", ...e.argv]);
+
+    return e.argv[0] === "git" ? ok("") : ok(LISTING);
+  });
+  on("ui.open", async (_$, e) => {
+    opens.push({ id: e.id, columns: e.columns, rows: e.rows, focus: e.focus });
+
+    return { value: { isPlaced: true } };
+  });
+  on("ui.panes", async () => ({ value: [{ ...BOARD_PANE }] }));
+
+  const session = async (
+    label: string,
+    start: Record<string, unknown>,
+  ): Promise<void> => {
+    await $.session.end({
+      reason: "clear",
+      sessionId: `gate-${label}`,
+      resume: { id: `gate-${label}` },
+    });
+    await $.session.start(start);
+  };
+
+  // A non-interactive process -- a headless `-p` run, the SDK, a workflow
+  // child: no pane, no clock, and not one child.
+  await session("headless", { ...START, isInteractive: false });
+  expect(opens, "isInteractive false opens no pane").toEqual([]);
+  expect(asked, "isInteractive false runs no child").toEqual([]);
+
+  // A teammate process: CLAUDECODE=1, and the same nothing.
+  env.CLAUDECODE = "1";
+  await session("teammate", { ...START });
+  expect(opens, "CLAUDECODE=1 opens no pane").toEqual([]);
+  expect(asked, "CLAUDECODE=1 runs no child").toEqual([]);
+
+  // A PERSON's process: interactive, CLAUDECODE unset. Asserted rather than
+  // reset away -- this is the case a gate reading the wrong field, or reading
+  // it inverted, would fail, and the two gated cases would still pass.
+  delete env.CLAUDECODE;
+  await session("person", { ...START });
+  expect(opens.length, "a person's session opens the pane").toBeGreaterThan(0);
+  expect(
+    asked.length,
+    "a person's session reads the repository",
+  ).toBeGreaterThan(0);
+
+  // Leave no session running for the tests after this one, and let the work a
+  // person's session left in flight settle before the engine tears its hooks
+  // down -- an orphaned `$.clock.now` would land as an unhandled rejection.
+  await $.session.end({
+    reason: "clear",
+    sessionId: "gate-done",
+    resume: { id: "gate-done" },
+  });
+  await clock.settle();
+});
+
+/**
+ * QCLI-494 AC2 (DEC-172 (4bl)). The per-tick subprocess budget, measured in its
+ * own unit: the subprocesses ONE alerts tick spawns, on the Pane render path --
+ * `ui.render` starts the check ahead of its own `resolveLocal`, so the tick has
+ * to NAME the repository itself before its reads.
+ *
+ * The stored open set carries a task this tick's read does not, so the check
+ * has a departure it would like to name with a `task view`. With the
+ * `resolveLocal` child charged to the budget, the tick spends that child and
+ * its two reads -- three -- and the departure is CARRIED; with the child left
+ * uncounted it spends four and goes over.
+ */
+test("an alerts tick counts the child that names the repository (QCLI-494 AC2)", async ($, on) => {
+  const asked: string[][] = [];
+  const clock = mock.clock(on, { now: Date.UTC(2026, 9, 2, 4, 30, 0) });
+  // A previous session left OCLI-1 and OCLI-8 open; `LISTING` carries only
+  // OCLI-8, so OCLI-1 has departed and the check would look it up.
+  mock.store(on, {
+    [ALERTS_KEY]: {
+      decisions: {},
+      // Keyed by the repository the TICK below reads (`/repos/quest-cli`), so
+      // its stored open set is the one compared against.
+      tasks: {
+        "quest-cli": { "OCLI-1": "In Progress", "OCLI-8": "In Progress" },
+      },
+    },
+  });
+  mock.env(on, {});
+  // The root MOVES between the mount and the tick below, so the tick has to
+  // name a repository the module has not seen: that is what makes this tick's
+  // children its own, with no concurrent resolve from the Pane render beside
+  // them to confuse the count.
+  let root = "/repos/prime-cli";
+  on("session.root", async () => ({ value: root }));
+  on("process.run", async (_$, e) => {
+    asked.push([e.init?.cwd ?? "", ...e.argv]);
+    if (e.argv[0] === "git") return ok("");
+    if (e.argv.includes("view")) return ok(VIEW);
+
+    return ok(LISTING);
+  });
+  on("ui.panes", async () => ({ value: [{ ...BOARD_PANE }] }));
+
+  // The pane render with NO `session.start`, which resolves `/repos/prime-cli`
+  // and starts the check. Its own tick is not the one under test.
+  const ui = await $.ui.mount({
+    plugin: "opum-quest",
+    surface: "terminal",
+    component: "Pane",
+    requestId: "quest-board",
+    props: PANE,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  // ONE alerts tick, with the repository newly moved: whatever `asked` holds
+  // next is this tick's own children and nothing else.
+  root = "/repos/quest-cli";
+  asked.length = 0;
+  await clock.advance(120_000);
+
+  const argv = asked.map((entry) => entry.slice(1).join(" "));
+  const named = argv.filter((one) => one.includes("--git-common-dir"));
+  const reads = argv.filter(
+    (one) => one.includes("decision list") || one.includes("--exclude-status"),
+  );
+  const lookedUp = argv.filter((one) => one.includes("task view"));
+
+  // The tick has to name the moved repository: without that, this would be a
+  // cache hit and the budget would not be exercised.
+  expect(named, "the tick names the repository itself").toHaveLength(1);
+  expect(reads, "the tick reads its two lists").toHaveLength(2);
+  // Three children, so the departure waits for the next tick rather than
+  // making this one four.
+  expect(lookedUp, "the departure is carried, not looked up").toEqual([]);
+  expect(
+    argv.length,
+    `the tick spawned ${argv.length}: ${argv.join(" | ")}`,
+  ).toBeLessThanOrEqual(3);
+  await ui.unmount();
 });

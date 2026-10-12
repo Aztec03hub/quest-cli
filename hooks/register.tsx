@@ -56,8 +56,10 @@ const DASHBOARD_TOOL_NAME = `mcp__opum-quest__${DASHBOARD_TOOL}`;
 const REFRESH_MS = 60_000;
 // No clock tick may spawn more than this many subprocesses (QCLI-490, DEC-172
 // (4bg) item 1 (d)). The refresh tick runs two -- one `task list` and one
-// `git status`; the alerts tick runs its two reads plus, still inside this
-// budget, the `task view` it uses to tell a Done task from a Closed one.
+// `git status`; the alerts tick runs its two reads and, when it had to NAME the
+// repository, the one `git rev-parse` that takes (QCLI-494, DEC-172 (4bl)),
+// plus -- still inside this budget -- the `task view` it uses to tell a Done
+// task from a Closed one.
 const MAX_TICK_CHILDREN = 3;
 const PREFS_KEY = "opum-quest.board.view";
 
@@ -161,13 +163,20 @@ function dirFor(repo: string): string {
 // four children where the budget is three (QCLI-490, DEC-172 (4bg) item 1 (d)).
 let localRoot: string | null = null;
 
-// Reads this session's own repo, the one place the pane may write, from the session.
-async function resolveLocal($: EngineInterface): Promise<string> {
+/**
+ * The session's own repository, AND the subprocesses this call spent naming it:
+ * 1 when it ran the `git rev-parse`, 0 when the name was already known for this
+ * root. The cost is RETURNED rather than stashed in module state, so a tick
+ * charges exactly what its own call spent (QCLI-494, DEC-172 (4bl)).
+ */
+async function resolveLocalAndReport(
+  $: EngineInterface,
+): Promise<{ repo: string; spent: 0 | 1 }> {
   const root = await $.session.root();
   if (localRepo !== null && localRoot === root) {
     dirs.set(localRepo, root);
 
-    return localRepo;
+    return { repo: localRepo, spent: 0 };
   }
   let name = root.replace(/\/+$/, "").split("/").pop() ?? root;
   try {
@@ -187,7 +196,12 @@ async function resolveLocal($: EngineInterface): Promise<string> {
   localRoot = root;
   dirs.set(name, root);
 
-  return name;
+  return { repo: name, spent: 1 };
+}
+
+// Reads this session's own repo, the one place the pane may write, from the session.
+async function resolveLocal($: EngineInterface): Promise<string> {
+  return (await resolveLocalAndReport($)).repo;
 }
 
 async function quest($: EngineInterface, repo: string, args: string[]) {
@@ -465,7 +479,9 @@ async function checkAlerts($: EngineInterface): Promise<void> {
     return;
   }
   try {
-    await resolveLocal($);
+    // The child this call may spend naming the repository is charged to the
+    // tick below: it is a subprocess like any other (QCLI-494).
+    const resolved = await resolveLocalAndReport($);
     const stored = await $.store.get(ALERTS_KEY);
     const isBaseline = !isAlertsState(stored);
     const previous: AlertsState = isBaseline
@@ -501,8 +517,12 @@ async function checkAlerts($: EngineInterface): Promise<void> {
     // Each read repo costs TWO children -- its `decision list` and its
     // `task list` -- so the reads spend twice their count. Seeding this with
     // `read.length` alone let the tick spawn four (QCLI-490 review round 1,
-    // blocker): two reads plus two `task view` look-ups.
-    let spent = read.length * 2;
+    // blocker): two reads plus two `task view` look-ups. QCLI-494 (DEC-172
+    // (4bl)): the child `resolveLocalAndReport` spent naming the repository is
+    // charged here too, so the bound of three holds by ARITHMETIC rather than
+    // by the caller having resolved first -- the Pane render starts this check
+    // ahead of its own resolveLocal.
+    let spent = resolved.spent + read.length * 2;
     for (const [repo, ids] of Object.entries(previous.tasks)) {
       if (!read.some((one) => one.repo === repo)) {
         continue;

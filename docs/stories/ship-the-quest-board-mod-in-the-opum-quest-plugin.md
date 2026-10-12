@@ -51,6 +51,15 @@ rather than repeated here.
   and the marketplace pin moves to it, so a plugin user gets the board by
   updating rather than by building.
 
+**Note, 2026-10-12 — the fleet-view criterion is kept as written, and is no
+longer a live requirement.** QCLI-490 retired fleet view under DEC-172 (4bg)
+item 1 (a): the board, the alerts and the `dashboard` tool now read the
+session's own repository and nothing else, and the `root`/`repos` options, the
+scope toggle and the repo picker are gone. The criterion above is not edited —
+a met criterion is not rewritten, which would falsify history — so it stands
+with this note, and (4bk) disposition A is the ruling behind that. What the
+requirement becomes is tracked as QCLI-494's third criterion.
+
 ## Tasks
 
 <!-- lore:tasks:begin -->
