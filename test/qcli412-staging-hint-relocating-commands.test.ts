@@ -42,7 +42,7 @@ function run(workspace: string, argv: readonly string[]) {
 }
 
 const quest = (workspace: string, args: readonly string[]) =>
-  run(workspace, ["bun", MAIN, ...args]);
+  run(workspace, [process.execPath, MAIN, ...args]);
 
 async function workspace() {
   const root = await mkdtemp(join(tmpdir(), "qcli412-"));

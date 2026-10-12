@@ -32,7 +32,7 @@ const conformance = join(
 );
 
 async function quest(store: string, argv: readonly string[]) {
-  const child = Bun.spawn(["bun", source, ...argv], {
+  const child = Bun.spawn([process.execPath, source, ...argv], {
     cwd: store,
     stdout: "pipe",
     stderr: "pipe",
@@ -50,7 +50,7 @@ async function questWithStdin(
   argv: readonly string[],
   stdinBody: string,
 ) {
-  const child = Bun.spawn(["bun", source, ...argv, "--json"], {
+  const child = Bun.spawn([process.execPath, source, ...argv, "--json"], {
     cwd: store,
     stdin: "pipe",
     stdout: "pipe",
@@ -81,7 +81,7 @@ async function compiledQuest(store: string, argv: readonly string[]) {
 }
 
 async function questUntilOutput(store: string, argv: readonly string[]) {
-  const child = Bun.spawn(["bun", source, ...argv], {
+  const child = Bun.spawn([process.execPath, source, ...argv], {
     cwd: store,
     stdout: "pipe",
     stderr: "pipe",
@@ -575,14 +575,14 @@ test("the compiled binary rejects missing and duplicate status values", async ()
 test("the versioned fixture runs without importing Quest source", async () => {
   const store = await mkdtemp(join(tmpdir(), "quest-conformance-"));
   try {
-    const child = Bun.spawn(["bun", conformance], {
+    const child = Bun.spawn([process.execPath, conformance], {
       cwd: store,
       stdout: "pipe",
       stderr: "pipe",
       env: {
         ...Bun.env,
         QUEST_TASK_STORE: store,
-        QUEST_EXECUTABLE: "bun",
+        QUEST_EXECUTABLE: process.execPath,
         QUEST_EXECUTABLE_ARGS: JSON.stringify([source]),
       },
     });

@@ -25,7 +25,7 @@ function spawnQuest(
   args: readonly string[],
   stdin?: string,
 ): SpawnResult {
-  const child = Bun.spawnSync(["bun", MAIN, ...args], {
+  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
     cwd: workspace,
     stdin: stdin === undefined ? "ignore" : "pipe",
     stdout: "pipe",
@@ -62,7 +62,7 @@ async function seedWorkspace(size: number): Promise<string> {
       console.log("seeded:" + count);
     `;
   const seeded = Bun.spawnSync(
-    ["bun", "--eval", seedProgram, "--", root, String(size)],
+    [process.execPath, "--eval", seedProgram, "--", root, String(size)],
     {
       stdout: "pipe",
       stderr: "pipe",

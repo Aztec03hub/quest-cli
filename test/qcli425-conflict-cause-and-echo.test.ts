@@ -38,7 +38,7 @@ function run(workspace: string, argv: readonly string[]) {
 }
 
 const quest = (workspace: string, args: readonly string[]) =>
-  run(workspace, ["bun", MAIN, ...args]);
+  run(workspace, [process.execPath, MAIN, ...args]);
 const git = (workspace: string, args: readonly string[]) =>
   run(workspace, ["git", ...args]);
 
@@ -181,7 +181,7 @@ test("a writer race stays distinguishable: no sentRevision, concurrent-change wo
       Array.from({ length: 16 }, async (_, writer) => {
         const child = Bun.spawn(
           [
-            "bun",
+            process.execPath,
             MAIN,
             "task",
             "create",

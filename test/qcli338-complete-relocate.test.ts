@@ -6,7 +6,7 @@ import { join } from "node:path";
 const MAIN = new URL("../src/cli/main.ts", import.meta.url).pathname;
 
 function quest(cwd: string, args: readonly string[]) {
-  const child = Bun.spawnSync(["bun", MAIN, ...args], {
+  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
     cwd,
     stdout: "pipe",
     stderr: "pipe",

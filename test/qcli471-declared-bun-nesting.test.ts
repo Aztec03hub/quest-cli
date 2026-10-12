@@ -21,14 +21,17 @@ import { join } from "node:path";
 
 const REPO = new URL("..", import.meta.url).pathname;
 
-// A bare `bun` token: not preceded by a path or word character (`/`, `.`,
-// letters, digits) and not followed by a word character or `-` (so `bunx` and
-// a hyphenated word are not offenders). That shape is a PATH lookup wherever
-// it appears -- at the start of a script, after `&&`, `;`, `|` or `(`, inside
-// backtick or `$(` command substitution, behind a `VAR=` prefix, or as a
-// `${npm_execpath:-bun}` fallback. `"$npm_execpath"` carries no `bun` token,
-// which is the whole point.
-const BARE_BUN = /(?:^|[^\w/.])bun(?![-\w])/;
+// A bare `bun` or `bunx` token: not preceded by a path or word character (`/`,
+// `.`, letters, digits) and not followed by a word character or `-`. That shape
+// is a PATH lookup wherever it appears -- at the start of a script, after `&&`,
+// `;`, `|` or `(`, inside backtick or `$(` command substitution, behind a
+// `VAR=` prefix, or as a `${npm_execpath:-bun}` fallback. `"$npm_execpath"`
+// carries no `bun` token, which is the whole point.
+//
+// QCLI-492. `bunx` is an offender for the SAME reason: it is itself a
+// PATH-resolved executable, so a bare `bunx` falls back to PATH's bun exactly
+// as a bare `bun` does. QCLI-471 exempted it, and that exemption was the gap.
+const BARE_BUN = /(?:^|[^\w/.])bunx?(?![-\w])/;
 
 const readScripts = async (): Promise<Record<string, string>> => {
   const pkg = (await Bun.file(join(REPO, "package.json")).json()) as {
@@ -37,7 +40,7 @@ const readScripts = async (): Promise<Record<string, string>> => {
   return pkg.scripts ?? {};
 };
 
-test("no package script invokes a bare `bun` (QCLI-471)", async () => {
+test("no package script invokes a bare `bun` or `bunx` (QCLI-471, QCLI-492)", async () => {
   const scripts = await readScripts();
   const names = Object.keys(scripts).sort();
   // A check that read nothing must not pass.
@@ -67,9 +70,11 @@ test("the nested test runner in `bun run check` uses the declared bun (QCLI-471)
 // review round 1 measured that the first version of BARE_BUN, whose separators
 // were `[\s&|;(]`, missed a bare `bun` inside backtick command substitution --
 // a gap no current script exercises but a future one could. These cases pin the
-// guard's reach so it cannot silently narrow again.
-test("the bare-bun guard matches every shell position (QCLI-471)", () => {
-  // Positive: a bare `bun` token in any shell position is a PATH lookup.
+// guard's reach so it cannot silently narrow again. QCLI-492 moved `bunx` from
+// the negative list to the positive one for the same reason.
+test("the bare-bun guard matches every shell position (QCLI-471, QCLI-492)", () => {
+  // Positive: a bare `bun` or `bunx` token in any shell position is a PATH
+  // lookup.
   for (const script of [
     "bun test",
     "x && bun test",
@@ -83,6 +88,8 @@ test("the bare-bun guard matches every shell position (QCLI-471)", () => {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: literal script text, not a placeholder
     "${npm_execpath:-bun} test",
     "... && bun",
+    "bunx tsc",
+    "x && bunx tsc",
   ])
     expect([script, BARE_BUN.test(script)]).toEqual([script, true]);
 
@@ -93,7 +100,6 @@ test("the bare-bun guard matches every shell position (QCLI-471)", () => {
     "node scripts/check-layers.mjs",
     "./node_modules/.bin/bun test",
     "/opt/homebrew/bin/bun test",
-    "bunx tsc",
   ])
     expect([script, BARE_BUN.test(script)]).toEqual([script, false]);
 });

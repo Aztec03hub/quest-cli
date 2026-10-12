@@ -6,7 +6,7 @@ import { join } from "node:path";
 const executable = join(import.meta.dir, "../../../src/cli/main.ts");
 
 async function quest(store: string, argv: readonly string[]) {
-  const child = Bun.spawn(["bun", executable, ...argv], {
+  const child = Bun.spawn([process.execPath, executable, ...argv], {
     cwd: store,
     stdout: "pipe",
     stderr: "pipe",
@@ -26,7 +26,7 @@ async function quest(store: string, argv: readonly string[]) {
 async function questNative(cwd: string, argv: readonly string[]) {
   const env = { ...Bun.env };
   delete env.QUEST_TASK_STORE;
-  const child = Bun.spawn(["bun", executable, ...argv], {
+  const child = Bun.spawn([process.execPath, executable, ...argv], {
     cwd,
     stdout: "pipe",
     stderr: "pipe",

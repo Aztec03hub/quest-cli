@@ -33,13 +33,18 @@ async function exitsWithin(
 test("a browser whose workspace is deleted exits (QCLI-348)", async () => {
   const root = await mkdtemp(join(tmpdir(), "qcli348-"));
   await Bun.spawn(["git", "init", "-q"], { cwd: root }).exited;
-  await Bun.spawn(["bun", MAIN, "init"], { cwd: root, stdout: "ignore" })
-    .exited;
-  const child = Bun.spawn(["bun", MAIN, "browser", "--port", "0", "--json"], {
+  await Bun.spawn([process.execPath, MAIN, "init"], {
     cwd: root,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+    stdout: "ignore",
+  }).exited;
+  const child = Bun.spawn(
+    [process.execPath, MAIN, "browser", "--port", "0", "--json"],
+    {
+      cwd: root,
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   try {
     // Started and serving, before anything is deleted.
     const reader = child.stdout.getReader();

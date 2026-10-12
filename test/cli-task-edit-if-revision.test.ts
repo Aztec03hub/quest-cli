@@ -26,7 +26,7 @@ interface SpawnResult {
 }
 
 function spawnQuest(workspace: string, args: readonly string[]): SpawnResult {
-  const child = Bun.spawnSync(["bun", MAIN, ...args], {
+  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
     cwd: workspace,
     stdin: "ignore",
     stdout: "pipe",

@@ -7,6 +7,13 @@ import { fileURLToPath } from "node:url";
 const repository = fileURLToPath(new URL("..", import.meta.url));
 const realGit = Bun.which("git");
 
+// QCLI-492. Never resolve `bun` from PATH: on a host whose PATH bun is not the
+// declared pin, a bare `bun` runs the delivery under the wrong runtime.
+// `npm_execpath` is the declaring bun Bun exports into every nested script's
+// environment (QCLI-471); `process.execPath` is the fallback for a direct
+// `bun <file>` launch, where the running interpreter IS that bun.
+const BUN = process.env.npm_execpath ?? process.execPath;
+
 function run(command, args, cwd, env = {}) {
   return new Promise((resolve, reject) => {
     let stdout = "";
@@ -44,7 +51,8 @@ async function fixture() {
         "build:packages": "node scripts/build.mjs",
         "check:packages": "node scripts/noop.mjs",
         "test:packages": "node scripts/noop.mjs",
-        "deliver:packages": "bun run scripts/deliver-package-artifacts.mjs",
+        "deliver:packages":
+          '"$npm_execpath" run scripts/deliver-package-artifacts.mjs',
       },
     }),
   );
@@ -81,7 +89,7 @@ await writeFile("package.json", \`\${await readFile("package.json", "utf8").then
 
 async function deliver(root, env) {
   return run(
-    "bun",
+    BUN,
     ["run", "deliver:packages", "--", "--message", "fixture delivery"],
     root,
     env,

@@ -17,6 +17,14 @@ import { REGISTRY_PINS } from "./registry-visibility.mjs";
 import { spawnTarget } from "./spawn-target.mjs";
 
 const execFile = promisify(execFileCallback);
+
+// QCLI-492. Never resolve `bun` from PATH: on a host whose PATH bun is not the
+// declared pin, a bare `bun` runs the gate under the wrong runtime.
+// `npm_execpath` is the declaring bun Bun exports into every nested script's
+// environment (QCLI-471); where it is absent -- CI runs this file directly as
+// `bun scripts/qualification/prepublish.mjs`, not through `bun run` --
+// `process.execPath` IS that same bun, because bun is the running interpreter.
+const BUN = process.env.npm_execpath ?? process.execPath;
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const requestedTarget = process.env.QUEST_QUALIFICATION_TARGET;
 const nativeTarget = `${process.platform}-${process.arch}`;
@@ -68,29 +76,27 @@ function sha256(contents) {
 }
 
 async function runSourceGates() {
-  await attempt(() => command("typecheck", "bun", ["run", "typecheck"]));
-  await attempt(() => command("biome", "bun", ["run", "lint"]));
-  await attempt(() => command("format", "bun", ["run", "format:check"]));
-  await attempt(() => command("layers", "bun", ["run", "layer:check"]));
+  await attempt(() => command("typecheck", BUN, ["run", "typecheck"]));
+  await attempt(() => command("biome", BUN, ["run", "lint"]));
+  await attempt(() => command("format", BUN, ["run", "format:check"]));
+  await attempt(() => command("layers", BUN, ["run", "layer:check"]));
   // QCLI-292: CI's frozen install cannot see a stale bun.lock pin until the
   // new version is published, so a bump PR has to be gated here instead.
-  await attempt(() =>
-    command("lockfile_pins", "bun", ["run", "check:lockfile"]),
-  );
+  await attempt(() => command("lockfile_pins", BUN, ["run", "check:lockfile"]));
   // QCLI-328: a breaking CHANGELOG section at a patch-level bump is refused
   // on the bump PR itself, before anyone chooses the number again (0.6.2).
   await attempt(() =>
-    command("breaking_bump", "bun", ["run", "check:breaking-bump"]),
+    command("breaking_bump", BUN, ["run", "check:breaking-bump"]),
   );
   await attempt(() =>
-    command("package_artifact_delivery", "bun", [
+    command("package_artifact_delivery", BUN, [
       "run",
       "test:package-artifact-delivery",
     ]),
   );
   // QCLI-376: `bun run test` runs this first; nothing in CI ran it at all.
   await attempt(() =>
-    command("repository_check_scope", "bun", [
+    command("repository_check_scope", BUN, [
       "run",
       "test:repository-check-scope",
     ]),
@@ -101,19 +107,16 @@ async function runSourceGates() {
   // It is exercised by Claude Code's own engine, through scripts/mod-test.mjs,
   // so without a gate here the only thing that runs it is whoever remembers
   // to. The runner installs beside the pinned CLI below.
-  await attempt(() => command("mod", "bun", ["run", "test:mod"]));
+  await attempt(() => command("mod", BUN, ["run", "test:mod"]));
   const files = await testFiles();
   await attempt(() => checkTestCoverage(files));
   for (const [name, path] of TEST_GATES)
-    await attempt(() => command(name, "bun", ["test", `./${path}`]));
+    await attempt(() => command(name, BUN, ["test", `./${path}`]));
   const topLevel = files.filter(
     (file) => !file.includes("/", "test/".length) && !gatedBy(file),
   );
   await attempt(() =>
-    command("top_level", "bun", [
-      "test",
-      ...topLevel.map((file) => `./${file}`),
-    ]),
+    command("top_level", BUN, ["test", ...topLevel.map((file) => `./${file}`)]),
   );
 }
 
@@ -334,7 +337,7 @@ async function runCandidateSmoke() {
 
 if (process.env.QUEST_QUALIFICATION_SOURCE === "1") await runSourceGates();
 await attempt(() =>
-  command("package_contents_and_provenance", "bun", ["run", "check:packages"]),
+  command("package_contents_and_provenance", BUN, ["run", "check:packages"]),
 );
 if (process.env.QUEST_QUALIFICATION_SKIP_CANDIDATE !== "1")
   await attempt(runCandidateSmoke);

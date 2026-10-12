@@ -56,7 +56,7 @@ created_date: '2026-01-01T00:00:00Z'
 }
 
 function quest(workspace: string, args: readonly string[]) {
-  const child = Bun.spawnSync(["bun", MAIN, ...args], {
+  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
     cwd: workspace,
     stdout: "pipe",
     stderr: "pipe",

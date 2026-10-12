@@ -10,7 +10,7 @@ import { commandManifest } from "../src/application/command-contract.ts";
 const MAIN = new URL("../src/cli/main.ts", import.meta.url).pathname;
 
 async function quest(cwd: string, args: readonly string[]) {
-  const child = Bun.spawn(["bun", MAIN, ...args], {
+  const child = Bun.spawn([process.execPath, MAIN, ...args], {
     cwd,
     stdout: "pipe",
     stderr: "pipe",

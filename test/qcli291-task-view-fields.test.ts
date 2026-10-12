@@ -21,7 +21,12 @@ import { join } from "node:path";
 
 const RUN = (cwd: string, args: readonly string[]) =>
   Bun.spawnSync(
-    ["bun", "run", join(import.meta.dir, "../src/cli/main.ts"), ...args],
+    [
+      process.execPath,
+      "run",
+      join(import.meta.dir, "../src/cli/main.ts"),
+      ...args,
+    ],
     { cwd, stdout: "pipe", stderr: "pipe" },
   );
 

@@ -19,7 +19,7 @@ const ACTOR = ["--actor", "person-1", "--actor-kind", "human"] as const;
 const roots: string[] = [];
 
 function quest(workspace: string, args: readonly string[]) {
-  const child = Bun.spawnSync(["bun", MAIN, ...args], {
+  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
     cwd: workspace,
     stdout: "pipe",
     stderr: "pipe",

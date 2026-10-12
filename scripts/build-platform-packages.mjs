@@ -17,6 +17,14 @@ const rootPackagePath = join(root, "package.json");
 const rootPackage = JSON.parse(await readFile(rootPackagePath, "utf8"));
 const version = rootPackage.version;
 
+// QCLI-492. Never resolve `bun` from PATH: `Bun.which("bun")` returned whatever
+// PATH held, so on a host whose PATH bun is not the declared pin the compile
+// ran under the wrong runtime. `npm_execpath` is the declaring bun Bun exports
+// into every nested script's environment (QCLI-471 -- and this file is reached
+// as `"$npm_execpath" run scripts/build-platform-packages.mjs`); the
+// `process.execPath` fallback covers a direct `bun <file>` launch.
+const BUN = process.env.npm_execpath ?? process.execPath;
+
 // The reported version is derived once, here, from the checkout's git state
 // (QCLI-296). It is injected as a build-time define so a dev binary reports a
 // version distinguishable from the last published one without introducing a
@@ -71,7 +79,7 @@ for (const [os, cpu] of selectedPlatforms) {
       : undefined;
   const result = Bun.spawnSync(
     [
-      Bun.which("bun"),
+      BUN,
       "build",
       "--compile",
       `--target=bun-${os}-${cpu}`,

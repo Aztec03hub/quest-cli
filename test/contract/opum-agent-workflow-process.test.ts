@@ -17,7 +17,7 @@ async function quest(arguments_: string[], stdin?: string) {
     return runQuest([...arguments_, "--json"], false, true);
   // Stdin transport: pipe the envelope through the real CLI process.
   const child = Bun.spawn(
-    ["bun", "run", join("src/cli/main.ts"), ...arguments_, "--json"],
+    [process.execPath, "run", join("src/cli/main.ts"), ...arguments_, "--json"],
     {
       cwd: `${import.meta.dir}/../..`,
       stdin: "pipe",
@@ -415,7 +415,7 @@ async function spawnRawStdin(
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const child = Bun.spawn(
     [
-      "bun",
+      process.execPath,
       new URL("../../src/cli/main.ts", import.meta.url).pathname,
       "task",
       "binding",

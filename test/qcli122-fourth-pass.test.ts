@@ -24,7 +24,7 @@ import { createTask } from "../src/domain/tasks/tasks.ts";
 const MAIN = new URL("../src/cli/main.ts", import.meta.url).pathname;
 
 function spawnJson(workspace: string, args: readonly string[]) {
-  const child = Bun.spawnSync(["bun", MAIN, ...args], {
+  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
     cwd: workspace,
     stdout: "pipe",
     stderr: "pipe",
@@ -99,7 +99,7 @@ test("red: production kill between rename and mark is recovered by next entry wi
         const t = createTask(id, { title: "K" + id });
         await writeFile("${dir}/" + id + ".json", JSON.stringify(t) + "\\n");
       }`;
-    Bun.spawnSync(["bun", "--eval", seedEval]);
+    Bun.spawnSync([process.execPath, "--eval", seedEval]);
     // victim program: begin batch, apply one record via writeRecord+mark,
     // then hard-exit while lock+journal remain.
     const victimProgram = `
@@ -117,7 +117,7 @@ test("red: production kill between rename and mark is recovered by next entry wi
       console.log("WRITTEN");
       process.kill(process.pid, "SIGKILL");
     `;
-    const victim = Bun.spawnSync(["bun", "--eval", victimProgram], {
+    const victim = Bun.spawnSync([process.execPath, "--eval", victimProgram], {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -678,7 +678,7 @@ test("red: SIGKILL after begin (before write) recovers with truthful empty recei
     for (const id of ["T-1", "T-2"]) await seedDirect(dir, id);
     // Child A: begin then die before any write.
     const victim = Bun.spawnSync(
-      ["bun", "--eval", childProgram({ dir, killAfter: "begin" })],
+      [process.execPath, "--eval", childProgram({ dir, killAfter: "begin" })],
       {
         stdout: "pipe",
         stderr: "pipe",
@@ -730,7 +730,7 @@ test("red: SIGKILL between writeRecord rename and markApplied recovers with trut
     // Child B: begin, atomic rename of T-1, die BEFORE markApplied.
     const victim = Bun.spawnSync(
       [
-        "bun",
+        process.execPath,
         "--eval",
         childProgram({ dir, killAfter: "write", taskId: "T-1" }),
       ],

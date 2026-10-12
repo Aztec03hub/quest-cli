@@ -6,7 +6,7 @@ import { join } from "node:path";
 const source = join(import.meta.dir, "..", "src", "cli", "main.ts");
 
 async function quest(store: string, argv: readonly string[]) {
-  const child = Bun.spawn(["bun", source, ...argv], {
+  const child = Bun.spawn([process.execPath, source, ...argv], {
     cwd: store,
     stdout: "pipe",
     stderr: "pipe",

@@ -16,7 +16,7 @@ async function quest(
   argv: readonly string[],
   options?: { env?: Record<string, string>; cwd?: string },
 ) {
-  const child = Bun.spawn(["bun", source, ...argv], {
+  const child = Bun.spawn([process.execPath, source, ...argv], {
     cwd: options?.cwd ?? "/tmp",
     stdout: "pipe",
     stderr: "pipe",

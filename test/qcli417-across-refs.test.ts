@@ -113,7 +113,7 @@ async function setOriginUrl(
 }
 
 const quest = (cwd: string, args: readonly string[]): Run =>
-  run(cwd, ["bun", MAIN, ...args]);
+  run(cwd, [process.execPath, MAIN, ...args]);
 
 /** Runs a command that must succeed, so a broken fixture says so where it
  *  broke rather than three assertions later. */

@@ -45,7 +45,7 @@ async function seed(root: string, id: string, title: string, deps?: string[]) {
 }
 
 function spawnJson(workspace: string, args: readonly string[], stdin?: string) {
-  const child = Bun.spawnSync(["bun", MAIN, ...args], {
+  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
     cwd: workspace,
     stdin: stdin === undefined ? "ignore" : "pipe",
     stdout: "pipe",

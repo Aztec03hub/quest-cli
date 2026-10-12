@@ -27,7 +27,7 @@ const MAIN = new URL("../src/cli/main.ts", import.meta.url).pathname;
 const ACTOR = ["--actor", "person-1", "--actor-kind", "human"] as const;
 
 function quest(workspace: string, args: readonly string[]) {
-  const child = Bun.spawnSync(["bun", MAIN, ...args], {
+  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
     cwd: workspace,
     stdout: "pipe",
     stderr: "pipe",
@@ -166,10 +166,13 @@ test("the edit-side spellings work -- the split is a naming choice, not a capabi
 });
 
 test("the task edit help text NAMES the create/edit split (QCLI-283, AC-2 second arm)", async () => {
-  const help = Bun.spawnSync(["bun", MAIN, "help", "task", "edit", "--json"], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const help = Bun.spawnSync(
+    [process.execPath, MAIN, "help", "task", "edit", "--json"],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   expect(help.exitCode).toBe(0);
   const entry = JSON.parse(help.stdout.toString()).data.commands[0];
   const summary = entry.summary as string;
@@ -309,10 +312,13 @@ test("a create-only spelling does not hide another unrecognized flag (QCLI-484 A
 });
 
 test("the docblock and the help name exactly the create-only spellings the map holds (QCLI-484 AC2, AC3)", async () => {
-  const help = Bun.spawnSync(["bun", MAIN, "help", "task", "edit", "--json"], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const help = Bun.spawnSync(
+    [process.execPath, MAIN, "help", "task", "edit", "--json"],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   expect(help.exitCode).toBe(0);
   const summary = JSON.parse(help.stdout.toString()).data.commands[0]
     .summary as string;

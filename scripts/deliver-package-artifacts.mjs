@@ -37,6 +37,13 @@ function emit(event, fields = {}) {
   );
 }
 
+// QCLI-492. Never resolve `bun` from PATH: on a host whose PATH bun is not the
+// declared pin, a bare `bun` runs the nested script under the wrong runtime.
+// `npm_execpath` is the declaring bun Bun exports into every nested script's
+// environment (QCLI-471); `process.execPath` is the fallback for a direct
+// `bun <file>` launch, where the running interpreter IS that bun.
+const BUN = process.env.npm_execpath ?? process.execPath;
+
 function run(command, args, { allowFailure = false, env } = {}) {
   const started = performance.now();
   return new Promise((resolve, reject) => {
@@ -160,7 +167,7 @@ try {
   });
   for (const target of targets)
     await step(`build:${target}`, () =>
-      run("bun", ["run", "build:packages"], {
+      run(BUN, ["run", "build:packages"], {
         env: { QUEST_BUN_TARGET: target },
       }),
     );
@@ -185,8 +192,8 @@ try {
         `Invalid staged artifact set. staged=${staged.join(",")}`,
       );
   });
-  await step("check:packages", () => run("bun", ["run", "check:packages"]));
-  await step("test:packages", () => run("bun", ["run", "test:packages"]));
+  await step("check:packages", () => run(BUN, ["run", "check:packages"]));
+  await step("test:packages", () => run(BUN, ["run", "test:packages"]));
   await step("commit", () =>
     git([
       "-c",

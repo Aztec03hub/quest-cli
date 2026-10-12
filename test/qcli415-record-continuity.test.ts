@@ -45,7 +45,7 @@ function run(workspace: string, argv: readonly string[]) {
 }
 
 const quest = (workspace: string, args: readonly string[]) =>
-  run(workspace, ["bun", MAIN, ...args]);
+  run(workspace, [process.execPath, MAIN, ...args]);
 const git = (workspace: string, args: readonly string[]) =>
   run(workspace, ["git", ...args]);
 

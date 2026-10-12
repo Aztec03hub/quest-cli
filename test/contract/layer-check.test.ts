@@ -13,15 +13,15 @@ afterEach(async () => {
 });
 
 async function runLayerCheck(root: string) {
-  const process = Bun.spawn(["bun", checker], {
+  const child = Bun.spawn([process.execPath, checker], {
     cwd: root,
     stdout: "pipe",
     stderr: "pipe",
   });
   const [exitCode, stdout, stderr] = await Promise.all([
-    process.exited,
-    new Response(process.stdout).text(),
-    new Response(process.stderr).text(),
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
   ]);
   return { exitCode, stdout, stderr };
 }
