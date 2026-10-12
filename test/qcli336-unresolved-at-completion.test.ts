@@ -123,7 +123,7 @@ test("task list --unresolved-at-completion finds a completed task with open item
   }
 }, 60_000);
 
-test("unresolvedAtCompletion is set once at completion and does not change when the completed task is edited afterward (QCLI-336)", async () => {
+test("editing a completed task's checklist does not change its unresolvedAtCompletion (QCLI-336, QCLI-479)", async () => {
   const root = await workspace();
   try {
     quest(root, [
@@ -180,6 +180,120 @@ test("quest manifest declares task list's --unresolved-at-completion filter and 
       (entry) => entry.name === "task view",
     );
     expect(view?.fields).toContain("unresolvedAtCompletion");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 60_000);
+
+/**
+ * QCLI-479 (opum-doc DEC-172 (4ae)): a COMPLETION REFRESHES the field. It used
+ * to be written once, so a task demoted back to an active status, amended and
+ * completed again still carried the FIRST completion's snapshot -- including
+ * the criterion text as it stood then -- which reads as a current statement
+ * about the record when it is really a historical one.
+ *
+ * Both directions are pinned here: a re-completion with nothing unresolved
+ * CLEARS the field, and one that does leave something unresolved carries THAT
+ * text. Removing the refresh from `complete()` (returning the record unchanged
+ * when nothing is unresolved, and overwriting only when something is) turns
+ * the first assertion red and leaves the second green.
+ */
+test("a re-completion refreshes unresolvedAtCompletion, and clears it when nothing is unresolved (QCLI-479)", async () => {
+  const root = await workspace();
+  try {
+    quest(root, [
+      "task",
+      "create",
+      "Ship it",
+      "--acceptance-criteria",
+      '["first criterion","second criterion"]',
+      ...HUMAN,
+      "--json",
+    ]);
+    quest(root, ["task", "start", "T-1", ...HUMAN, "--json"]);
+    quest(root, ["task", "complete", "T-1", ...HUMAN, "--json"]);
+
+    const first = JSON.parse(
+      quest(root, ["task", "view", "T-1", "--json"]).stdout,
+    ) as { data: { unresolvedAtCompletion?: unknown } };
+    expect(first.data.unresolvedAtCompletion).toEqual({
+      acceptanceCriteria: [
+        { index: 0, text: "first criterion" },
+        { index: 1, text: "second criterion" },
+      ],
+      definitionOfDone: [],
+    });
+
+    // Done -> an active status is reachable only through demote. Amend BOTH
+    // criteria's text AND check them, so nothing is unresolved now and the
+    // first snapshot must NOT survive the second completion.
+    expect(
+      quest(root, [
+        "task",
+        "demote",
+        "T-1",
+        "--to",
+        "In Progress",
+        ...HUMAN,
+        "--json",
+      ]).exitCode,
+    ).toBe(0);
+    quest(root, [
+      "task",
+      "edit",
+      "T-1",
+      "--acceptance-criteria",
+      '[{"index":0,"text":"reworded one","checked":true},{"index":1,"text":"reworded two","checked":true}]',
+      ...HUMAN,
+      "--json",
+    ]);
+    quest(root, ["task", "complete", "T-1", ...HUMAN, "--json"]);
+
+    const again = JSON.parse(
+      quest(root, ["task", "view", "T-1", "--json"]).stdout,
+    ) as {
+      data: {
+        unresolvedAtCompletion?: unknown;
+        acceptanceCriteria: readonly { text: string; checked: boolean }[];
+      };
+    };
+    // The criteria really were amended, so an absent field below is the
+    // refresh and not a fixture that never changed.
+    expect(again.data.acceptanceCriteria.map((one) => one.text)).toEqual([
+      "reworded one",
+      "reworded two",
+    ]);
+    expect(again.data.unresolvedAtCompletion).toBeUndefined();
+
+    // The other direction: a re-completion that DOES leave something
+    // unresolved carries THAT text, not the first completion's.
+    quest(root, [
+      "task",
+      "demote",
+      "T-1",
+      "--to",
+      "In Progress",
+      ...HUMAN,
+      "--json",
+    ]);
+    quest(root, [
+      "task",
+      "edit",
+      "T-1",
+      "--uncheck-ac",
+      "1",
+      ...HUMAN,
+      "--json",
+    ]);
+    quest(root, ["task", "complete", "T-1", ...HUMAN, "--json"]);
+
+    const third = JSON.parse(
+      quest(root, ["task", "view", "T-1", "--json"]).stdout,
+    ) as { data: { unresolvedAtCompletion?: unknown } };
+    expect(third.data.unresolvedAtCompletion).toEqual({
+      acceptanceCriteria: [{ index: 0, text: "reworded one" }],
+      definitionOfDone: [],
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

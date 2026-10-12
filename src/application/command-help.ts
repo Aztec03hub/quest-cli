@@ -221,9 +221,17 @@ export const commandHelp: Record<
       "equal to the whole count). Omitted, the read is the full unbounded " +
       "record, unchanged. A task completed with acceptance criteria or " +
       "definition-of-done items still unchecked carries an " +
-      "`unresolvedAtCompletion` field (QCLI-336) naming them, set once at " +
-      "completion and never recomputed by a later edit; absent on any task " +
-      "not completed that way. --fields <a,b,...> (QCLI-291 / DEC-161) is the " +
+      "`unresolvedAtCompletion` field (QCLI-336) naming them. A COMPLETION " +
+      "refreshes it (QCLI-479 / opum-doc DEC-172 (4ae)): a task demoted " +
+      "back to an active status, amended and completed again carries the " +
+      "unresolved set of THAT completion, and the field is cleared when " +
+      "nothing is unresolved then, so the earlier snapshot does not survive " +
+      "that re-completion. The field is written ONLY by a completion, so an " +
+      "amendment with no demote and no re-completion -- editing a completed " +
+      "task's checklist, or `task edit --status <terminal>`, which reaches the " +
+      "terminal status without a completion -- leaves the snapshot as the " +
+      "completion before it wrote it. It is " +
+      "absent on any task not completed that way. --fields <a,b,...> (QCLI-291 / DEC-161) is the " +
       "same projection `task list` takes: it narrows the record to EXACTLY the " +
       "named fields, so under --json `data` carries exactly those keys (a " +
       "named field absent from the record is null, never a dropped key) and " +
@@ -402,7 +410,7 @@ export const commandHelp: Record<
   },
   "task complete": {
     summary:
-      "Move a task to its terminal complete status. Unchecked acceptance criteria and definition-of-done items do NOT block completion -- an honestly-unchecked item is advisory, not an error (QCLI-252) -- but completing with any left unchecked prints a stderr warning naming them and adds an `unresolvedAtCompletion` field to the JSON result, so the gap is reported rather than silent. That field is also PERSISTED on the record itself (QCLI-336), not just this one response -- `quest task view`/`task list --json` surface it afterward, and `task list --unresolved-at-completion` finds every completed task still carrying one, so the gap survives past this command's own output. --final-summary is optional and applies a plain replacement to the record as part of the same write (QCLI-270), so a final summary can be recorded and the task completed in one command instead of `task edit --final-summary` followed by `task complete`; `--clear-final-summary`/`--append-final-summary` stay edit-only. A record ALREADY at the terminal status -- reached by `task edit --status <terminal>`, which per QCLI-221 deliberately does not relocate -- is RELOCATED to .quest/completed/ rather than refused with `Illegal task transition` (QCLI-338); the completion still runs, so `--final-summary` and `unresolvedAtCompletion` are computed on that path too (opum-doc DEC-172 (4ai)). A record ALREADY IN .quest/completed/ or .quest/archive/ is a different case and is NOT relocated: only tasks/ -> completed/ is the relocation this command finishes, so those shapes still refuse exactly as before.",
+      "Move a task to its terminal complete status. Unchecked acceptance criteria and definition-of-done items do NOT block completion -- an honestly-unchecked item is advisory, not an error (QCLI-252) -- but completing with any left unchecked prints a stderr warning naming them and adds an `unresolvedAtCompletion` field to the JSON result, so the gap is reported rather than silent. That field is also PERSISTED on the record itself (QCLI-336), not just this one response -- `quest task view`/`task list --json` surface it afterward, and `task list --unresolved-at-completion` finds every completed task still carrying one, so the gap survives past this command's own output. A COMPLETION REFRESHES that field (QCLI-479 / opum-doc DEC-172 (4ae)): a task demoted back to an active status, amended and completed again carries the unresolved set of THAT completion, and the field is CLEARED when nothing is unresolved then, so the earlier snapshot does not survive that re-completion. The field is written ONLY by this command, so an amendment with no demote and no re-completion -- editing a completed task's checklist, or `task edit --status <terminal>`, which reaches the terminal status without a completion -- leaves the snapshot as the completion before it wrote it. Nothing else on the record carries an earlier one; each completion replaces it. --final-summary is optional and applies a plain replacement to the record as part of the same write (QCLI-270), so a final summary can be recorded and the task completed in one command instead of `task edit --final-summary` followed by `task complete`; `--clear-final-summary`/`--append-final-summary` stay edit-only. A record ALREADY at the terminal status -- reached by `task edit --status <terminal>`, which per QCLI-221 deliberately does not relocate -- is RELOCATED to .quest/completed/ rather than refused with `Illegal task transition` (QCLI-338); the completion still runs, so `--final-summary` and `unresolvedAtCompletion` are computed on that path too (opum-doc DEC-172 (4ai)). A record ALREADY IN .quest/completed/ or .quest/archive/ is a different case and is NOT relocated: only tasks/ -> completed/ is the relocation this command finishes, so those shapes still refuse exactly as before.",
     usage:
       'quest task complete <id> [--final-summary "text"] --actor <name> --actor-kind human',
     flags: ["--final-summary", ...ACTOR_FLAGS],

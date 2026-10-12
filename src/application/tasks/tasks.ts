@@ -831,13 +831,23 @@ export class TaskService {
             ? transitioned
             : taskState({ ...transitioned, finalSummary });
         // QCLI-336: persists QCLI-252's response-only signal onto the record
-        // itself, computed once from the checklist state at the moment of
-        // completion -- see unresolvedAtCompletion's own doc comment on
-        // TaskState for why this is never recomputed afterward.
+        // itself. QCLI-479 (opum-doc DEC-172 (4ae)): a COMPLETION REFRESHES it,
+        // so it is the unresolved set at the moment THIS record reached its
+        // terminal status. A re-completion -- Done, demoted back to an active
+        // status, amended, then completed again -- therefore overwrites a
+        // previous snapshot, and CLEARS it when nothing is unresolved now:
+        // leaving the older one standing is what let a first-completion
+        // snapshot read as a current statement about amended criteria. The
+        // `undefined` is what CLEARS it: it survives taskState's parse as a
+        // present key holding undefined, and is dropped when the record is
+        // serialized at the write boundary. demoteTask withdraws `resolution`
+        // by rest destructuring instead; either way the key is absent from the
+        // persisted record.
         const unresolved = unresolvedAtCompletion(withSummary);
-        return unresolved === undefined
-          ? withSummary
-          : taskState({ ...withSummary, unresolvedAtCompletion: unresolved });
+        return taskState({
+          ...withSummary,
+          unresolvedAtCompletion: unresolved,
+        });
       },
     );
   }

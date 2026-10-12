@@ -477,10 +477,12 @@ type ChecklistEntry =
     };
 
 /**
- * QCLI-336: `unresolvedAtCompletion` is now computed once, by
- * `tasks.complete()` (application/tasks/tasks.ts), and persisted on the
- * record -- this type describes the shape the CLI reads back off `data`,
- * not something it computes itself any more.
+ * QCLI-336: `unresolvedAtCompletion` is computed by `tasks.complete()`
+ * (application/tasks/tasks.ts) and persisted on the record. QCLI-479 (opum-doc
+ * DEC-172 (4ae)): a COMPLETION REFRESHES it rather than writing it once, so a
+ * task demoted, amended and completed again carries the unresolved set of that
+ * later completion. This type describes the shape the CLI reads back off
+ * `data`, not something it computes itself any more.
  */
 type UnresolvedChecklistItem = {
   readonly index: number;
