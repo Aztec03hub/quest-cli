@@ -451,9 +451,9 @@ changes step 1, which is required either way.
    If the CI/OIDC publish path is unavailable (see "Publishing locally when
    CI cannot" below), `scripts/publish-release.mjs` performs a fail-closed,
    receipt-gated publish from an operator's own machine. It does NOT run the
-   same gate set as `release.yml`: two of that workflow's gates are CI-only
-   and must be run by hand on the local route. The enumeration is in "The
-   gate set each route runs" below.
+   same gate set as `release.yml`: two of that workflow's gate scripts --
+   three invocations -- are CI-only and must be run by hand on the local
+   route. The enumeration is in "The gate set each route runs" below.
 
 8. Confirm the receipt describes what the registry actually serves, then hand
    it to downstream qualification:
@@ -565,11 +565,12 @@ cannot cover -- trusted publishing not yet configured, or (as observed
 2026-09) GitHub's org-wide immutable-subject-claim policy rejecting the
 subject shape npm Trusted Publishing expects. It shares CI's fail-closed,
 receipt-gated posture, but not CI's full gate set: `release.yml` runs two
-gates the local script does not, so a reader who takes this route must run
-those by hand. "The gate set each route runs" below enumerates every gate of
-each route. `--receipt <path>` is required, and the receipt must bind the
-exact commit and version being published (`validateReceipt`, re-deriving
-every digest from the artifacts on disk rather than trusting the document).
+gate scripts the local script does not (three invocations), so a reader who
+takes this route must run those by hand. "The gate set each route runs"
+below enumerates every gate of each route. `--receipt <path>` is required,
+and the receipt must bind the exact commit and version being published
+(`validateReceipt`, re-deriving every digest from the artifacts on disk
+rather than trusting the document).
 
 `--qualification-run <id>` is also required (QCLI-366; opum-doc ADR
 `harden-fleet-ci-against-a-single-runner-outage-and-unqualified-publication`,
@@ -716,10 +717,12 @@ and would remove a release that is not actually broken.
 The local script imports and runs neither `scripts/qualification/release-provenance.mjs`
 (`--pre` and `--post`) nor `scripts/check-breaking-bump.mjs --pair`, both of
 which `release.yml` runs; a reader who took the local route believing the old
-"same gates" wording unknowingly dropped two CI gates. The table lists every
-gate `release.yml` runs, in workflow order, and where the local route covers
-it. A reader taking the local route must run the CI-only rows by hand, or the
-release ships having silently skipped them.
+"same gates" wording unknowingly dropped two CI gate scripts -- three
+invocations in all (`release-provenance --pre`, `check-breaking-bump --pair`
+and `release-provenance --post`). The table lists every gate `release.yml`
+runs, in workflow order, and where the local route covers it. A reader
+taking the local route must run the CI-only rows by hand, or the release
+ships having silently skipped them.
 
 | `release.yml` step | Gate | Local route (`publish-release.mjs`) |
 |---|---|---|
@@ -758,8 +761,8 @@ node scripts/check-breaking-bump.mjs --pair
 GITHUB_SHA=<released-commit> node scripts/qualification/release-provenance.mjs --post --version <X-rc.N>
 ```
 
-Found while running the 0.13.0 publish (main `5996e24a`), where both gates were
-run by hand precisely because the local route does not: `release-provenance --pre`
+Found while running the 0.13.0 publish (main `5996e24a`), where both gate scripts
+were run by hand precisely because the local route does not: `release-provenance --pre`
 with `GITHUB_REF=refs/tags/v0.13.0`, and `check-breaking-bump --pair`, both
 exit 0.
 

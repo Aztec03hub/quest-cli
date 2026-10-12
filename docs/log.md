@@ -281,6 +281,7 @@
 - 2026-10-11T23:40:01-05:00 5da788909eebd9ed223652c2692c8da730973eb6 docs(QCLI-464): name the gate set each release route runs
 - 2026-10-11T23:59:43-05:00 6b8cf9c59089d913ea28313d66a8108cb3862dc9 docs(QCLI-464): name the gate set each release route runs (#583)
 - 2026-10-12T04:41:22-05:00 8cd3ba630224b2c1b56210c968ea2cc7a10229d7 fix(QCLI-490): remove fleet mode, gate auto-start, guard the clocks and bound each tick (#588)
+- 2026-10-12T09:27:53-05:00 6841f62ec9a2936baca6e84cfc40b0fa316e3e76 fix(QCLI-494): pin the auto-start gate, and count the naming child in the tick budget (#595)
 
 ## docs/adr
 
