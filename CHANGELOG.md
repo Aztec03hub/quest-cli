@@ -24,13 +24,17 @@ dated by its own tag. No date here is inferred (QCLI-398).
   MUST read `identity`**: `conflict` reports only status divergence WITHIN one
   task and cannot tell a collision from one task whose states disagree.
 
-- **`task status-flow`'s `data` gains `pausedStatusConfigurable`** (QCLI-325;
-  opum-doc relay 570, DEC-172 (4af)): emitted beside `pausedStatus` as `false`
-  while the paused status is a built-in literal that no user-reachable knob
-  sets, so a consumer can read the situation from the output alone. A docs and
-  wire-field change only -- `pausedStatus` itself is unchanged, and the three
-  prose sites that read as a promise of a workspace knob now state the real
-  behaviour.
+- **`task status-flow`'s `data` gains `pausedStatusConfigurable`, and the
+  command's manifest `fields` declares it** (QCLI-325; opum-doc relay 570,
+  DEC-172 (4af)): emitted beside `pausedStatus` as `false` while the paused
+  status is a built-in literal that no user-reachable knob sets, so a consumer
+  can read the situation from the output alone. `pausedStatus` itself is
+  unchanged, and the platform-constraint fixtures carry the new key so the
+  conformance sample matches real output. The **four** prose sites that read as
+  a promise of a workspace knob now state the real behaviour -- the `task
+  status-flow` help, the `task pause` help, the `task start` help and the
+  task-finalization guide -- and a drift guard pins every one, each against the
+  wording it replaced (QCLI-480).
 
 ### Fixed
 
