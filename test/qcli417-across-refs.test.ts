@@ -438,8 +438,13 @@ test("a record that exists only on a PR head is proposed by that PR (QCLI-417 AC
   const proposed = entry(result.entries, "T-3");
   expect(proposed.proposedBy).toBe("opum-ai/quest-cli#1");
   expect(proposed.title).toBe("only on the pr head");
-  // QCLI-432: a lone state has nothing to collide with, so it is one task
-  // whatever its record carries.
+  // QCLI-432: T-3 lives on the PR head only, so its entry carries a single
+  // state and `identity` is `task` for a one-state group. T-3 was built with
+  // `quest task create`, so it DOES carry a createdAt and this assertion cannot
+  // show the carve-out's finer half -- that a LONE record with no createdAt is
+  // still `task` rather than `unresolved`. The T-9 test below is what pins
+  // that, and is the case that goes red if the `states.length < 2` guard is
+  // removed.
   expect(proposed.identity).toBe("task");
   expect(proposed.states).toEqual([
     {
@@ -544,6 +549,31 @@ test("a status conflict is DATA: the CLI exits 0, never 5 (QCLI-417 exit codes)"
   };
   expect(entry(envelope.data, "T-1").conflict).toBe(true);
   expect(envelope.coverage.complete).toBe(true);
+}, 60_000);
+
+test("`identity` is asserted through the CLI JSON envelope, not only the service view (QCLI-476)", async () => {
+  // The service-view tests above pin identityOf directly; nothing read the
+  // field back through the command the AC is about. This does, over the
+  // fixture's colliding PR head.
+  const envelope = JSON.parse(
+    questOk(fixture.work, [
+      "task",
+      "list",
+      "--across-refs",
+      "--ref",
+      "refs/heads/dev",
+      "--pr",
+      "3",
+    ]).stdout,
+  ) as { data: readonly AcrossRefsEntry[] };
+  // T-1 is the id collision the fixture builds: dev's T-1 and the colliding
+  // head's T-1 are two different records, so the command must report
+  // `collision` on the envelope.
+  expect(entry(envelope.data, "T-1").identity).toBe("collision");
+  // Negative control: T-2 is carried identically by dev and that head, so it is
+  // one record and must report `task`, which keeps the assertion above from
+  // passing against a constant.
+  expect(entry(envelope.data, "T-2").identity).toBe("task");
 }, 60_000);
 
 test("an injected discovery failure is one unreadable ref and never an uncaught error (QCLI-417)", async () => {
