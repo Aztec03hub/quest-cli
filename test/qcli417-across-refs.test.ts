@@ -766,6 +766,51 @@ test("the envelope keeps contractVersion at index 1, coverage after data, and pr
   expect(Object.keys(envelope)).not.toContain("scope");
 }, 60_000);
 
+test("every key `task list --across-refs` emits is manifest-declared, and every declared field is emitted (QCLI-475)", async () => {
+  // The manifest entry is the contract a consumer reads, and nothing tied it to
+  // the payload this command actually emits: QCLI-432's round-1 review found
+  // the new `identity` key emitted but undeclared, and only a reviewer noticed.
+  // The key-set assertion further down this file is hardcoded, so it pins the
+  // keys without ever reading the manifest and cannot catch that drift. This is
+  // the across-refs half of the QCLI-137 / QCLI-461 test for task view/list.
+  const manifest = JSON.parse(questOk(fixture.work, ["manifest"]).stdout).data
+    .commands as { name: string; fields?: readonly string[] }[];
+  const declared = manifest.find(
+    (command) => command.name === "task list --across-refs",
+  )?.fields;
+  expect(declared).toBeDefined();
+  const declaredSorted = [...(declared ?? [])].sort();
+  expect(declaredSorted.length).toBeGreaterThan(0);
+
+  const envelope = JSON.parse(
+    questOk(fixture.work, [
+      "task",
+      "list",
+      "--across-refs",
+      "--ref",
+      "refs/heads/dev",
+      "--pr",
+      "1",
+    ]).stdout,
+  ) as { data: readonly AcrossRefsEntry[] };
+  // A read that saw nothing must not pass: the loop below is vacuous over [].
+  expect(envelope.data.length).toBeGreaterThan(0);
+
+  for (const row of envelope.data) {
+    const keys = Object.keys(row).sort();
+    // (a) every emitted key is declared -- the direction QCLI-432 broke, where
+    // an undeclared `identity` rode out unnoticed.
+    expect(keys.filter((key) => !declaredSorted.includes(key))).toEqual([]);
+    // (b) and every declared field is emitted, so a declaration nothing writes
+    // (the QCLI-137 class) goes red here too.
+    expect(keys).toEqual(declaredSorted);
+  }
+  // Exercised by the emitted `identity` key: it is on every entry, and the
+  // fixture's T-1 is a real conflict, so this is not a stand-in value.
+  expect(envelope.data.every((row) => "identity" in row)).toBe(true);
+  expect(entry(envelope.data, "T-1").identity).toBeDefined();
+}, 60_000);
+
 test("--ref and --pr replace discovery with an explicit population, and --pr resolves by Git alone (QCLI-417)", async () => {
   const result = questOk(fixture.work, [
     "task",
