@@ -50,6 +50,15 @@ dated by its own tag. No date here is inferred (QCLI-398).
 
 ### Fixed
 
+- **A milestone stores its linked task ids in numeric order.** Linking a task
+  re-sorted the milestone's `taskIds` as plain strings, so a milestone with
+  eleven tasks stored `T-10` and `T-11` between `T-1` and `T-2`; the Backlog.md
+  import's milestone rebuild did the same. Both now use `compareTaskIds`. **An
+  existing milestone file keeps its stored order until the next task is linked
+  to it, and that write reorders the whole list**, so expect a one-time diff in
+  `.quest/milestones/` for any milestone with ten or more tasks. This builds on
+  the task-id change below.
+
 - **Task ids order by their number, so `T-2` comes before `T-10`.** Every place
   that ordered tasks by id compared the ids as plain strings, so a workspace
   with ten or more tasks listed `T-10` between `T-1` and `T-2`. That order

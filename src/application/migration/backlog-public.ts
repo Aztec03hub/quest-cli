@@ -15,6 +15,7 @@ import {
 } from "../../domain/records.ts";
 import {
   canonicalizeTaskLinks,
+  compareTaskIds,
   type TaskState,
   taskState,
 } from "../../domain/tasks/tasks.ts";
@@ -689,7 +690,7 @@ export class BacklogImportService {
         title: name,
         description: existing?.description,
         status: existing?.status ?? "open",
-        taskIds: Array.from(members).sort(),
+        taskIds: Array.from(members).sort(compareTaskIds),
       });
     }
     await save(path, {

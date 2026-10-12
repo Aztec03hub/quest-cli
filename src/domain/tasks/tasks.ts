@@ -1221,7 +1221,7 @@ export function closeMilestoneReference(
       ? [...milestone.taskIds]
       : [...milestone.taskIds, task.id];
     // Deterministic ordering: canonical id order, duplicates fail closed.
-    nextTaskIds.sort();
+    nextTaskIds.sort(compareTaskIds);
     if (new Set(nextTaskIds).size !== nextTaskIds.length)
       throw new RecordValidationError("milestone_task_duplicate");
     return {
