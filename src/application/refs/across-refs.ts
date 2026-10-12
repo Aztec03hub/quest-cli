@@ -87,7 +87,20 @@ export interface AcrossRefsState {
  * one task. A LONE state is `task` whatever it carries: it has nothing to
  * collide with.
  */
-export type AcrossRefsIdentity = "task" | "collision" | "unresolved";
+export const ACROSS_REFS_IDENTITIES = [
+  "task",
+  "collision",
+  "unresolved",
+] as const;
+
+/**
+ * The values `identity` can carry, DERIVED from that list so the type and the
+ * runtime set cannot drift: a value added to the array is a value the code may
+ * return. It is a runtime value because the DOCUMENTED set is held against it
+ * (QCLI-493) -- the task-creation guide and the `task list --across-refs` help
+ * must name exactly these, in a sentence a test can read.
+ */
+export type AcrossRefsIdentity = (typeof ACROSS_REFS_IDENTITIES)[number];
 
 export interface AcrossRefsEntry {
   readonly id: string;

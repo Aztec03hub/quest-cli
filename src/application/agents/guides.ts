@@ -190,16 +190,18 @@ allocator consults \`refs\`, never another checkout's uncommitted working tree, 
 two uncommitted \`create\` calls in two checkouts of one repository can both mint
 the same id; committing one closes the window (this is the QCLI-431 shape).
 \`task list --across-refs\` distinguishes that genuine collision from one
-task whose states disagree across refs. An entry's \`identity\` is \`task\` when
-every state carries the same \`createdAt\` (one record, read from several refs),
-\`collision\` when the states carry two or more distinct \`createdAt\` values
-(different records that happen to share an id), and \`unresolved\` when a state
-carries no \`createdAt\` and the two cannot be compared -- an unresolved pair is
-reported as a collision, never assumed to be one task. A LONE state -- a group
-of fewer than two states -- is always \`task\`, whatever its record carries:
-there is nothing to compare it against, so a one-state group with no
-\`createdAt\` is \`task\`, not \`unresolved\`. Resolve a collision by landing one
-record and deleting the other.
+task whose states disagree across refs. An entry's \`identity\` takes exactly
+three values: \`task\`, \`collision\`, \`unresolved\`. It is \`task\` when every
+state carries the same \`createdAt\` (one record, read from several refs),
+\`collision\` when every state carries one and there are two or more distinct
+\`createdAt\` values (different records that happen to share an id), and
+\`unresolved\` when ANY state in a group of two or more carries no \`createdAt\`,
+so the states cannot be compared. An unresolved pair is reported as
+\`unresolved\`, never assumed to be one task. A LONE state -- a group of fewer
+than two states -- is always \`task\`, whatever its record carries: there is
+nothing to compare it against, so a one-state group with no \`createdAt\` is
+\`task\`, not \`unresolved\`. Resolve a collision by landing one record and
+deleting the other.
 
 ## Type and priority come from the workspace's vocabulary
 

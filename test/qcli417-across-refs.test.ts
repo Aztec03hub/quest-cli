@@ -14,12 +14,14 @@ import {
 import { commandHelp } from "../src/application/command-help.ts";
 import { BOOLEAN_FLAGS } from "../src/application/command-parameters.ts";
 import {
+  ACROSS_REFS_IDENTITIES,
   type AcrossRefsCoverage,
   type AcrossRefsEntry,
   type AcrossRefsFilter,
   type AcrossRefsOutcome,
   AcrossRefsViewService,
 } from "../src/application/refs/across-refs.ts";
+import { findQuestGuide } from "../src/application/agents/guides.ts";
 import type {
   DiscoveredPullRequest,
   OriginRemote,
@@ -1747,3 +1749,60 @@ test("a PR head whose objects are not local IS fetched, and no ref moves (N4)", 
     ),
   ).toBe(before);
 }, 60_000);
+
+test("the documented identity value set is the value set the code emits (QCLI-493)", async () => {
+  // The DOCUMENTED set is PARSED out of both surfaces rather than restated
+  // here, and each surface must also declare the count, so a value added to or
+  // dropped from a list -- or from the count over it -- turns this red on its
+  // own. This is the test QCLI-493 exists for: the two surfaces used to say an
+  // unresolved pair "is reported as a collision", which reads as if the two
+  // were one value.
+  const documented = (text: string, which: string): string[] => {
+    // `\s+` rather than a space between the words: the guide is a wrapped
+    // string, so its sentence carries a newline where the help carries one
+    // space, and both must read.
+    const match =
+      /`identity`[\s\S]{0,80}?takes exactly\s+(\w+)\s+values:\s*([^.]*)\./u.exec(
+        text,
+      );
+    expect(match, `${which} has no identity value sentence`).not.toBeNull();
+    const values = [...(match?.[2] ?? "").matchAll(/`([^`]+)`/gu)].map(
+      (one) => one[1],
+    );
+    const words = ["one", "two", "three", "four", "five"];
+    expect(values.length, `${which} says "${match?.[1]}"`).toBe(
+      words.indexOf(match?.[1] ?? "") + 1,
+    );
+
+    return values;
+  };
+
+  const help = documented(
+    commandHelp["task list --across-refs"].summary,
+    "the `task list --across-refs` help",
+  );
+  const guide = documented(
+    findQuestGuide("task-creation")?.content ?? "",
+    "the task-creation guide",
+  );
+
+  // The surfaces agree with the runtime list the `identity` TYPE is derived
+  // from, so a value added to that list and not to the prose is red here too.
+  expect(help).toEqual([...ACROSS_REFS_IDENTITIES]);
+  expect(guide).toEqual([...ACROSS_REFS_IDENTITIES]);
+
+  // And that list is what the code EMITS -- every value, over the fixture's
+  // four shapes: an agreeing pair, a lone state, a colliding pair, and a pair
+  // one of whose states carries no `createdAt`.
+  const emitted = new Set<string>();
+  for (const [port, id] of [
+    [openPr(fixture), "T-2"],
+    [openPr(fixture), "T-3"],
+    [collisionPr(fixture), "T-1"],
+    [unresolvedPr(fixture), "T-1"],
+  ] as const) {
+    const result = await view(fixture, port);
+    emitted.add(entry(result.entries, id).identity);
+  }
+  expect([...emitted].sort()).toEqual([...ACROSS_REFS_IDENTITIES].sort());
+}, 120_000);
