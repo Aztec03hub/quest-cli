@@ -589,6 +589,8 @@ export class QuestTrackerClient {
           "terminalStatuses",
           "pausedStatus",
           "pausedStatusConfigurable",
+          "closedStatus",
+          "resolutions",
         ],
       },
       {

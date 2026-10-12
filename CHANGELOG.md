@@ -29,12 +29,24 @@ dated by its own tag. No date here is inferred (QCLI-398).
   DEC-172 (4af)): emitted beside `pausedStatus` as `false` while the paused
   status is a built-in literal that no user-reachable knob sets, so a consumer
   can read the situation from the output alone. `pausedStatus` itself is
-  unchanged, and the platform-constraint fixtures carry the new key so the
-  conformance sample matches real output. The **four** prose sites that read as
+  unchanged, and the public conformance fixture
+  (`src/contract/tracker/fixtures.ts`) carries the new key so its sample
+  matches real output. The **four** prose sites that read as
   a promise of a workspace knob now state the real behaviour -- the `task
   status-flow` help, the `task pause` help, the `task start` help and the
   task-finalization guide -- and a drift guard pins every one, each against the
   wording it replaced (QCLI-480).
+
+- **`task status-flow`'s manifest `fields` now declare the COMPLETE key set the
+  command emits** (QCLI-482): `closedStatus` and `resolutions` join
+  `statuses`, `terminalStatuses`, `pausedStatus` and
+  `pausedStatusConfigurable`. Both were always emitted whenever a closed status
+  is configured -- the default workspace has one -- while the manifest
+  advertised a curated subset, the same under-declaration QCLI-461 closed for
+  `task list`, `task view` and `search`. The manifest and its two mirrors
+  (`src/contract/tracker/index.ts`, `src/contract/tracker/fixtures.ts`) move
+  together, and an assertion now holds every emitted key to the declared set,
+  proved by removing one declaration and watching it name the key.
 
 ### Fixed
 

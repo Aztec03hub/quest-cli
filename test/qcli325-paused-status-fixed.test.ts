@@ -64,6 +64,24 @@ test("task status-flow output says the paused status is built-in and not user-ch
       )?.fields ?? [];
     expect(declared).toContain("pausedStatus");
     expect(declared).toContain("pausedStatusConfigurable");
+    // QCLI-482: the declared list must be the COMPLETE emitted key set, not a
+    // curated subset -- the same under-declaration class QCLI-461 closed for
+    // task list/view/search. The default workspace HAS a closed status
+    // ("Closed"), so `closedStatus` and `resolutions` are emitted on this run
+    // and the subset direction below is not passing on silence; asserting they
+    // are present is the positive control for exactly that.
+    expect(declared).toContain("closedStatus");
+    expect(declared).toContain("resolutions");
+    const emitted = Object.keys(flow.data);
+    expect(emitted).toContain("closedStatus");
+    expect(emitted).toContain("resolutions");
+    // Every key the command emits is declared. Removing one from the declared
+    // list turns this red and names it (QCLI-482).
+    const undeclared = emitted.filter((key) => !declared.includes(key));
+    expect(
+      undeclared,
+      `emitted-but-undeclared: ${undeclared.join(", ")}`,
+    ).toEqual([]);
   } finally {
     await rm(store, { recursive: true, force: true });
   }

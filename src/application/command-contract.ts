@@ -226,11 +226,17 @@ export const commandManifest = {
       mutates: false,
       // QCLI-325: `pausedStatusConfigurable` is emitted beside `pausedStatus`
       // (always false for now -- opum-doc relay 570, DEC-172 (4af)).
+      // QCLI-482: the COMPLETE emitted key set. `closedStatus` and
+      // `resolutions` are emitted too whenever a closed status is configured
+      // (src/cli/commands/task/index.ts), so a curated subset here was the
+      // same under-declaration QCLI-461 closed for task list/view/search.
       fields: [
         "statuses",
         "terminalStatuses",
         "pausedStatus",
         "pausedStatusConfigurable",
+        "closedStatus",
+        "resolutions",
       ],
     },
     {

@@ -14,6 +14,8 @@ export const trackerManifestFixture: TrackerManifest = {
         "terminalStatuses",
         "pausedStatus",
         "pausedStatusConfigurable",
+        "closedStatus",
+        "resolutions",
       ],
     },
     {

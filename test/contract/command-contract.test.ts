@@ -209,6 +209,8 @@ test("the live manifest is non-empty and matches its result golden", () => {
         "terminalStatuses",
         "pausedStatus",
         "pausedStatusConfigurable",
+        "closedStatus",
+        "resolutions",
       ],
     },
     {
