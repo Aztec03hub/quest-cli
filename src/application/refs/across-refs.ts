@@ -1,5 +1,6 @@
 import { aliasKey, RecordValidationError } from "../../domain/records.ts";
 import {
+  compareTaskIds,
   defaultLifecyclePolicy,
   type LifecyclePolicy,
   resolveConfiguredStatus,
@@ -763,12 +764,12 @@ export class AcrossRefsViewService {
     const sort = filter?.sort;
     const ordered =
       sort === undefined
-        ? [...selected].sort((a, b) => a.id.localeCompare(b.id))
+        ? [...selected].sort((a, b) => compareTaskIds(a.id, b.id))
         : [...selected].sort(
             (a, b) =>
               (sort.direction === "desc" ? -1 : 1) *
               (sort.field === "id"
-                ? a.id.localeCompare(b.id)
+                ? compareTaskIds(a.id, b.id)
                 : a.title.localeCompare(b.title)),
           );
     const limited =

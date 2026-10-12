@@ -50,6 +50,15 @@ dated by its own tag. No date here is inferred (QCLI-398).
 
 ### Fixed
 
+- **Task ids order by their number, so `T-2` comes before `T-10`.** Every place
+  that ordered tasks by id compared the ids as plain strings, so a workspace
+  with ten or more tasks listed `T-10` between `T-1` and `T-2`. That order
+  reached the default `task list`, `task list --sort id` (both directions), the
+  `--ready` order, `--across-refs`, `task search` with no query and the planning
+  summaries. The comparison now reads each number in the id as a number
+  (`compareTaskIds` in `src/domain/tasks/tasks.ts`). Prefixes still compare as
+  text, and draft ids keep their old order.
+
 - **`task edit` names the edit-side flag for three more create-only spellings,
   and no longer hides another unrecognized flag behind one of them** (QCLI-484;
   opum-doc DEC-172 (4aq)). `--assignee`, `--dependency` and `--modified-file`

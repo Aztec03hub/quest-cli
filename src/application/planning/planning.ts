@@ -11,6 +11,7 @@ import {
 } from "../../domain/records.ts";
 import type { PlanningRepository } from "../../ports/planning.ts";
 import {
+  compareTaskIds,
   defaultLifecyclePolicy,
   isOffFlowStatus,
   isRetiredPausedStatus,
@@ -208,7 +209,7 @@ function vocabularyIssues(
   vocabulary: TaskVocabulary,
 ): PlanningDoctorReport["issues"] {
   const issues: PlanningDoctorReport["issues"][number][] = [];
-  for (const task of [...tasks].sort((a, b) => a.id.localeCompare(b.id)))
+  for (const task of [...tasks].sort((a, b) => compareTaskIds(a.id, b.id)))
     for (const drift of vocabularyDrift(task, vocabulary)) {
       const allowed =
         (drift.field === "type" ? vocabulary.types : vocabulary.priorities) ??
@@ -248,7 +249,7 @@ function resolutionIssues(
     tasks.flatMap((task) => [task.id, ...task.aliases].map(aliasKey)),
   );
   const issues: PlanningDoctorReport["issues"][number][] = [];
-  for (const task of [...tasks].sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const task of [...tasks].sort((a, b) => compareTaskIds(a.id, b.id))) {
     const problem = resolutionProblem(task, lifecycle);
     if (problem !== undefined) {
       issues.push({

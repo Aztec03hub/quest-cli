@@ -1,4 +1,8 @@
-import { searchTasks, type TaskState } from "../../domain/tasks/tasks.ts";
+import {
+  compareTaskIds,
+  searchTasks,
+  type TaskState,
+} from "../../domain/tasks/tasks.ts";
 import type { TaskReader } from "../tasks/tasks.ts";
 import type { WorkspaceEntry } from "../workspaces/workspaces.ts";
 
@@ -48,13 +52,15 @@ export class WorkspaceTaskQueries {
     if (projection.snapshot)
       return {
         tasks: [...projection.snapshot.tasks].sort((a, b) =>
-          a.id.localeCompare(b.id),
+          compareTaskIds(a.id, b.id),
         ),
         source: "projection",
         projection: "matching",
       };
     return {
-      tasks: [...authoritative.tasks].sort((a, b) => a.id.localeCompare(b.id)),
+      tasks: [...authoritative.tasks].sort((a, b) =>
+        compareTaskIds(a.id, b.id),
+      ),
       source: "authoritative",
       projection: projection.state,
     };

@@ -1267,6 +1267,18 @@ export function validateMilestoneClosure(
   }
 }
 
+/**
+ * A sort key that reads the number in a task id as a number: `SM-2` sorts
+ * before `SM-10`, where a plain string comparison puts `SM-10` first.
+ */
+export function taskIdSortKey(id: string): string {
+  return id.replace(/\d+/g, (digits) => digits.padStart(12, "0"));
+}
+
+export function compareTaskIds(left: string, right: string): number {
+  return taskIdSortKey(left).localeCompare(taskIdSortKey(right));
+}
+
 /** Pure, deterministic ready-set evaluation; validates the whole graph before returning anything. */
 export function evaluateReadySet(
   tasks: readonly TaskState[],
@@ -1281,7 +1293,7 @@ export function evaluateReadySet(
   const finished = allTerminalStatuses(configured);
   const ready: CanonicalId[] = [];
   const excluded: ReadinessReason[] = [];
-  for (const task of [...tasks].sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const task of [...tasks].sort((a, b) => compareTaskIds(a.id, b.id))) {
     if (task.status !== configured.statuses[0]) {
       excluded.push({ taskId: task.id, reason: "lifecycle_ineligible" });
       continue;
@@ -1317,7 +1329,7 @@ export function searchTasks(
   query: string,
 ): readonly TaskState[] {
   const needle = query.trim().toLocaleLowerCase();
-  if (!needle) return [...tasks].sort((a, b) => a.id.localeCompare(b.id));
+  if (!needle) return [...tasks].sort((a, b) => compareTaskIds(a.id, b.id));
   return tasks
     .filter((task) =>
       [
@@ -1332,7 +1344,7 @@ export function searchTasks(
         .toLocaleLowerCase()
         .includes(needle),
     )
-    .sort((a, b) => a.id.localeCompare(b.id));
+    .sort((a, b) => compareTaskIds(a.id, b.id));
 }
 
 export function findTask(
