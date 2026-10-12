@@ -106,7 +106,7 @@ export const commandHelp: Record<
       "to diff the full `mappings` list by hand to find what is about to " +
       "change; `mappings` itself is unchanged, additive only.",
     usage:
-      "quest migration backlog preview --source <project> [--backlog-dir <path>] [--preserve-source-ids --source-family <PREFIX>]",
+      "quest migration backlog preview --source <path> [--backlog-dir <path>] [--preserve-source-ids --source-family <PREFIX>]",
     flags: [
       "--source",
       "--backlog-dir",
@@ -119,7 +119,7 @@ export const commandHelp: Record<
       "Apply a previously previewed Backlog.md migration. Re-supply " +
       "--preserve-source-ids/--source-family exactly as given to preview.",
     usage:
-      "quest migration backlog apply --source <project> --digest <digest> --actor <name> --actor-kind human [--backlog-dir <path>] [--preserve-source-ids --source-family <PREFIX>]",
+      "quest migration backlog apply --source <path> --digest <digest> --actor <name> --actor-kind human [--backlog-dir <path>] [--preserve-source-ids --source-family <PREFIX>]",
     flags: [
       "--source",
       "--digest",

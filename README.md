@@ -179,7 +179,7 @@ and check acceptance criteria only with evidence in hand.
 
 ## Migrating from Backlog.md
 
-`quest migration backlog preview --source <project> --json` previews a
+`quest migration backlog preview --source <path> --json` previews a
 Backlog.md-to-Quest cutover — digest, mappings, and (with
 `--preserve-source-ids`) exactly what a dotted-subtask renumbering would
 change — before `quest migration backlog apply` commits to it. See the

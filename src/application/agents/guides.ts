@@ -482,7 +482,7 @@ suite that must not touch the machine's real agent install.
 
 ## Coming from Backlog.md
 
-\`quest migration backlog preview --source <project> --json\` reports a digest and
+\`quest migration backlog preview --source <path> --json\` reports a digest and
 the record mappings without writing. Review both, then pass the digest back to
 \`quest migration backlog apply\`. \`status\` and \`rollback\` cover the rest of the
 lifecycle.

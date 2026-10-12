@@ -53,7 +53,7 @@ saying out loud, because it is the one mapping that is not identity.
 ## Step 3 — Preview, and show what it found
 
 ```
-quest migration backlog preview --source <project> --json
+quest migration backlog preview --source <path> --json
 ```
 
 with `--backlog-dir` and the step-2 id flags exactly as they will be passed to
@@ -75,7 +75,7 @@ and what it will write.
 On yes:
 
 ```
-quest migration backlog apply --source <project> --digest <digest> \
+quest migration backlog apply --source <path> --digest <digest> \
   --actor <id> --actor-kind human
 ```
 
