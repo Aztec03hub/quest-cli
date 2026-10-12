@@ -50,6 +50,13 @@ dated by its own tag. No date here is inferred (QCLI-398).
 
 ### Fixed
 
+- **Draft ids and the ids `cleanup` reports order by number too.** `draft list`
+  put `D-10` and `D-11` between `D-1` and `D-2`, and `cleanup --dry-run` listed
+  `M-10` before `M-2` (and `decisionIds` the same way), because they compared
+  ids as plain strings. They now use `compareTaskIds`, as does the milestone
+  column of `doctor`'s planning issues. Milestone lists and the planning board
+  were already in numeric order. This builds on the task-id change below.
+
 - **Task ids order by their number, so `T-2` comes before `T-10`.** Every place
   that ordered tasks by id compared the ids as plain strings, so a workspace
   with ten or more tasks listed `T-10` between `T-1` and `T-2`. That order
