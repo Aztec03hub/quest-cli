@@ -2,6 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { compareTaskIds } from "../src/domain/tasks/tasks.ts";
 
 /**
  * Task ids order by their number, not by their characters. With eleven or more
@@ -55,6 +56,30 @@ test("task list orders ids by number by default and with --sort id", async () =>
   expect(
     ids(quest(root, ["task", "list", "--sort", "id:desc", "--json"])),
   ).toEqual([...natural].reverse());
+});
+
+test("compareTaskIds reads numbers as numbers and stays a total order", () => {
+  const sorted = (ids: string[]) => [...ids].sort(compareTaskIds);
+  expect(sorted(["T-10", "T-9", "T-1", "T-2"])).toEqual([
+    "T-1",
+    "T-2",
+    "T-9",
+    "T-10",
+  ]);
+  expect(sorted(["SM-1", "QCLI-10", "QCLI-9"])).toEqual([
+    "QCLI-9",
+    "QCLI-10",
+    "SM-1",
+  ]);
+  expect(sorted(["QCLI-97.11.1", "QCLI-97.2", "QCLI-97"])).toEqual([
+    "QCLI-97",
+    "QCLI-97.2",
+    "QCLI-97.11.1",
+  ]);
+  // Leading zeros read as the same number, so the raw text breaks the tie.
+  expect(compareTaskIds("T-7", "T-007")).not.toBe(0);
+  expect(compareTaskIds("T-7", "T-007")).toBe(-compareTaskIds("T-007", "T-7"));
+  expect(compareTaskIds("T-3", "T-3")).toBe(0);
 });
 
 test("task list --ready keeps the numeric id order", async () => {

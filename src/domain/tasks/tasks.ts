@@ -1272,11 +1272,15 @@ export function validateMilestoneClosure(
  * before `SM-10`, where a plain string comparison puts `SM-10` first.
  */
 export function taskIdSortKey(id: string): string {
-  return id.replace(/\d+/g, (digits) => digits.padStart(12, "0"));
+  return id.replace(/\d+/g, (digits) => digits.padStart(20, "0"));
 }
 
+/** Ids that differ only in leading zeros (`T-7`, `T-007`) fall back to the raw text, so the order stays total. */
 export function compareTaskIds(left: string, right: string): number {
-  return taskIdSortKey(left).localeCompare(taskIdSortKey(right));
+  return (
+    taskIdSortKey(left).localeCompare(taskIdSortKey(right)) ||
+    left.localeCompare(right)
+  );
 }
 
 /** Pure, deterministic ready-set evaluation; validates the whole graph before returning anything. */

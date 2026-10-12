@@ -2,8 +2,8 @@ import { RecordValidationError } from "../../domain/records.ts";
 import {
   canonicalizeTaskLinks,
   closeMilestoneReference,
-  compareTaskIds,
   closeTask,
+  compareTaskIds,
   createDraft,
   createTask,
   createTaskLinkSession,
