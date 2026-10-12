@@ -279,6 +279,7 @@
 - 2026-10-06T22:27:01-05:00 598653c4f26da073202377d90eef92aa051d912f chore(QCLI-433): bump quest to 0.13.0 and record the board mod (#486)
 - 2026-10-07T12:31:14-05:00 04c9dbb2723a270ac118bf88a0aa087e32f4f1eb chore(QCLI-433): complete the 0.13.0 release task (#536)
 - 2026-10-11T23:40:01-05:00 5da788909eebd9ed223652c2692c8da730973eb6 docs(QCLI-464): name the gate set each release route runs
+- 2026-10-11T23:59:43-05:00 6b8cf9c59089d913ea28313d66a8108cb3862dc9 docs(QCLI-464): name the gate set each release route runs (#583)
 
 ## docs/adr
 

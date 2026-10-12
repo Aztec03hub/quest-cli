@@ -1,6 +1,6 @@
 import { expect, mock, test } from "claude-code/testing";
 import type { Engine } from "claude-code/testing";
-import type { FsEntry, On } from "claude-code";
+import type { On } from "claude-code";
 
 import {
   alertToasts,
@@ -30,8 +30,6 @@ const PANE = {
   view: {},
 };
 
-const ROOT = "/repos";
-
 const ok = (stdout: string) => ({
   value: {
     exitCode: 0,
@@ -41,23 +39,6 @@ const ok = (stdout: string) => ({
     isStderrTruncated: false,
   },
 });
-
-// The workspaces a fleet root holds, as `$.fs` would answer for them.
-const FLEET: FsEntry[] = [
-  { name: "opum-cli", kind: "dir", size: 0, mtimeMs: 0, isLink: false },
-  { name: "ward-cli", kind: "dir", size: 0, mtimeMs: 0, isLink: false },
-  { name: "not-a-workspace", kind: "dir", size: 0, mtimeMs: 0, isLink: false },
-  { name: "README.md", kind: "file", size: 0, mtimeMs: 0, isLink: false },
-];
-
-function mockFleet(on: On) {
-  on("fs.list", async (_$, e) => ({ value: e.path === ROOT ? FLEET : [] }));
-  on("fs.exists", async (_$, e) => ({
-    value:
-      e.path.endsWith("/.quest/workspace.toml") &&
-      !e.path.includes("not-a-workspace"),
-  }));
-}
 
 const LISTING = JSON.stringify({
   kind: "task.list",
@@ -172,7 +153,7 @@ test("parsers keep the drawn fields", async () => {
   expect(() => parseTaskList('{"kind":"error"}')).toThrow();
 });
 
-test("filters match id, title or label and narrow by repo", async () => {
+test("filters match id, title or label", async () => {
   const rows = [
     { repo: "a", error: null, coverage: null, tasks: parseTaskList(LISTING) },
     {
@@ -192,13 +173,12 @@ test("filters match id, title or label and narrow by repo", async () => {
       ],
     },
   ];
-  expect(filterRows(rows, "probe", "all").map((r) => r.tasks.length)).toEqual([
-    1, 0,
-  ]);
-  expect(filterRows(rows, "C5", "all").map((r) => r.tasks.length)).toEqual([
-    1, 0,
-  ]);
-  expect(filterRows(rows, "", "b").map((r) => r.repo)).toEqual(["b"]);
+  // The repo argument went with fleet mode (QCLI-490, DEC-172 (4bg) item 1
+  // (a)): the board holds one repository's row, so a filter narrows by text and
+  // an empty query leaves every task standing.
+  expect(filterRows(rows, "probe").map((r) => r.tasks.length)).toEqual([1, 0]);
+  expect(filterRows(rows, "C5").map((r) => r.tasks.length)).toEqual([1, 0]);
+  expect(filterRows(rows, "").map((r) => r.tasks.length)).toEqual([1, 1]);
   expect(listArgs("open", false)).toEqual([
     "--exclude-status",
     "Done",
@@ -253,10 +233,13 @@ test("the across-refs read keeps the landed state and reports coverage", async (
   expect(pickState([])).toBe("");
 });
 
-test("list, detail, errors and kanban draw on terminal and desktop", async ($, on) => {
+test("list, detail and kanban draw on terminal and desktop", async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 4, 30, 0) });
   mock.store(on);
-  mockFleet(on);
+  // The auto-start gate reads CLAUDECODE (QCLI-490). Empty here: every session
+  // this file starts is a PERSON's, so the pane opens as it always did. The
+  // gate's own cases live in the real-process proof, not in this kit.
+  mock.env(on, {});
   on("session.root", async () => ({ value: "/repos/opum-cli" }));
   on("process.run", async (_$, e) => {
     const repo = (e.init?.cwd ?? "").split("/").pop();
@@ -287,19 +270,16 @@ test("list, detail, errors and kanban draw on terminal and desktop", async ($, o
     });
     await ui.press({ key: "tab-list" });
     await ui.press({ key: "refresh" });
+    // One repository, and it is NAMED: fleet mode is gone (QCLI-490, DEC-172
+    // (4bg) item 1 (a)), so the board reads this session's own repo and nothing
+    // else -- no Repo Select, and no row for a workspace it never read.
     expect(
       await ui.find({
         type: "Text",
-        text: /1 in progress task in 1 repo, checked 04:30/,
+        text: /1 in progress task in opum-cli, checked 04:30/,
       }),
     ).toBeDefined();
-    expect(
-      await ui.find({ type: "Text", text: /ward-cli: no tracker here/ }),
-    ).toBeDefined();
-    // The fleet is discovered from the directories under the session's parent,
-    // so a workspace that answers, one that refuses and one that is not a
-    // workspace at all are all accounted for.
-    expect(await ui.find({ key: "repo" })).toBeDefined();
+    expect(await ui.find({ key: "repo" })).toBeUndefined();
     expect(
       await ui.find({ type: "Text", text: /not-a-workspace/ }),
     ).toBeUndefined();
@@ -328,10 +308,50 @@ test("list, detail, errors and kanban draw on terminal and desktop", async ($, o
   }
 });
 
+test("this session's own repository, when it cannot be read, draws its error row", async ($, on) => {
+  // With fleet mode gone this is the only error row that can be drawn, and it
+  // still is: one repository, refusing.
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 4, 30, 0) });
+  mock.store(on);
+  mock.env(on, {});
+  on("session.root", async () => ({ value: "/repos/opum-cli" }));
+  on("process.run", async (_$, e) => {
+    if (e.argv[0] === "git" && e.argv.includes("--git-common-dir"))
+      return ok("/repos/opum-cli/.git\n");
+    if (e.argv[0] === "git") return ok("");
+    return {
+      value: {
+        exitCode: 3,
+        stdout: "",
+        stderr: "no tracker here",
+        isStdoutTruncated: false,
+        isStderrTruncated: false,
+      },
+    };
+  });
+
+  const ui = await $.ui.mount({
+    plugin: "opum-quest",
+    surface: "terminal",
+    component: "Pane",
+    requestId: "quest-board",
+    props: PANE,
+  });
+  await ui.press({ key: "tab-list" });
+  await ui.press({ key: "refresh" });
+  expect(
+    await ui.find({ type: "Text", text: /opum-cli: no tracker here/ }),
+  ).toBeDefined();
+  await ui.unmount();
+});
+
 test("the refs toggle reads across refs and the pane says what was not read", async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 4, 30, 0) });
   mock.store(on);
-  mockFleet(on);
+  // The auto-start gate reads CLAUDECODE (QCLI-490). Empty here: every session
+  // this file starts is a PERSON's, so the pane opens as it always did. The
+  // gate's own cases live in the real-process proof, not in this kit.
+  mock.env(on, {});
   on("session.root", async () => ({ value: "/repos/opum-cli" }));
   const calls: string[][] = [];
   on("process.run", async (_$, e) => {
@@ -461,6 +481,9 @@ test("a width the surface keeps is said out loud, naming the width the person se
 });
 
 test("a stored view survives the reload, full mode included", () => {
+  // `scope: "fleet"` is deliberate, not left over: a view stored by a version
+  // that still had fleet mode must be ACCEPTED and read as local rather than
+  // refused (QCLI-490, DEC-172 (4bg) item 1 (a)). This is that case.
   const stored = {
     tab: "list",
     scope: "fleet",
@@ -504,7 +527,6 @@ test("the z hotkey switches to the full size and remembers it", async ($, on) =>
     return { value: undefined };
   });
   on("store.keys", async () => ({ value: [...entries.keys()] }));
-  mockFleet(on);
   on("session.root", async () => ({ value: "/repos/opum-cli" }));
   on("process.run", async (_$, e) => {
     if (e.argv[0] === "git") return ok("");
@@ -561,7 +583,10 @@ test("the z hotkey switches to the full size and remembers it", async ($, on) =>
 test("a full ask is made once per toggle: a resize never re-asks", async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 4, 30, 0) });
   mock.store(on);
-  mockFleet(on);
+  // The auto-start gate reads CLAUDECODE (QCLI-490). Empty here: every session
+  // this file starts is a PERSON's, so the pane opens as it always did. The
+  // gate's own cases live in the real-process proof, not in this kit.
+  mock.env(on, {});
   on("session.root", async () => ({ value: "/repos/opum-cli" }));
   on("process.run", async (_$, e) => {
     if (e.argv[0] === "git") return ok("");
@@ -636,6 +661,8 @@ test("a full ask is made once per toggle: a resize never re-asks", async ($, on)
 
 test("a stored full mode asks once on its first render", async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 4, 30, 0) });
+  // The auto-start gate reads CLAUDECODE (QCLI-490); this is a person's session.
+  mock.env(on, {});
   // The store is answered here rather than by `mock.store` so the test can
   // seed the full mode the way a previous session left it: `savePrefs` is the
   // writer and `isStoredView` the reader, and this is the reader's path
@@ -661,7 +688,6 @@ test("a stored full mode asks once on its first render", async ($, on) => {
     return { value: undefined };
   });
   on("store.keys", async () => ({ value: [...entries.keys()] }));
-  mockFleet(on);
   on("session.root", async () => ({ value: "/repos/opum-cli" }));
   on("process.run", async (_$, e) => {
     if (e.argv[0] === "git") return ok("");
@@ -742,7 +768,10 @@ test("a stored full mode asks once on its first render", async ($, on) => {
 test("the detail draws beside the list from 120 body columns", async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 4, 30, 0) });
   mock.store(on);
-  mockFleet(on);
+  // The auto-start gate reads CLAUDECODE (QCLI-490). Empty here: every session
+  // this file starts is a PERSON's, so the pane opens as it always did. The
+  // gate's own cases live in the real-process proof, not in this kit.
+  mock.env(on, {});
   on("session.root", async () => ({ value: "/repos/opum-cli" }));
   on("process.run", async (_$, e) => {
     if (e.argv[0] === "git") return ok("");
@@ -763,6 +792,7 @@ test("the detail draws beside the list from 120 body columns", async ($, on) => 
         props: { ...PANE, bodyColumns },
       });
       await ui.press({ key: "tab-list" });
+      await ui.press({ key: "refresh" });
       // With no task open there is nothing to draw beside the list, so the
       // board is one column at every width.
       expect((await ui.find({ key: "layout" }))?.props.flexDirection).toBe(
@@ -795,7 +825,6 @@ test("the pane says so when the surface kept the person's size", async ($, on) =
     return { value: undefined };
   });
   on("store.keys", async () => ({ value: [...entries.keys()] }));
-  mockFleet(on);
   on("session.root", async () => ({ value: "/repos/opum-cli" }));
   on("process.run", async (_$, e) => {
     if (e.argv[0] === "git") return ok("");
@@ -914,9 +943,10 @@ const UNPLACED_REASON =
   "unasked below 144 columns (100 now): placed when the person opens it, or when the terminal is widened to 144 columns";
 
 /**
- * The engine mocks the tool tests need: the clock, an empty store, the fleet
- * discovery, a `quest` answering the fixtures above, and every `ui.open`
- * recorded so the size, the id and the focus it asked for can be asserted.
+ * The engine mocks the tool tests need: the clock, an empty store, a `quest`
+ * answering the fixtures above, and every `ui.open` recorded so the size, the
+ * id and the focus it asked for can be asserted. (There is no `fs` mock any
+ * more: fleet discovery went with QCLI-490.)
  *
  * `NOPE-1` is not found in any workspace, which is what the unknown-task test
  * needs; every other id resolves.
@@ -939,7 +969,10 @@ function mockBoard(
   }[] = [];
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 4, 30, 0) });
   mock.store(on);
-  mockFleet(on);
+  // The auto-start gate reads CLAUDECODE (QCLI-490). Empty here: every session
+  // this file starts is a PERSON's, so the pane opens as it always did. The
+  // gate's own cases live in the real-process proof, not in this kit.
+  mock.env(on, {});
   on("session.root", async () => ({ value: "/repos/opum-cli" }));
   // `session.start` and `tool.register` are the engine's to answer: nothing
   // sits beneath a test's hooks, so a plugin's call on one rejects unless the
@@ -1027,7 +1060,9 @@ test("the dashboard tool registers at session start and opens without focus", as
       (registers[0]?.inputSchema as { properties?: object } | undefined)
         ?.properties ?? {},
     ),
-  ).toEqual(["scope", "full", "task"]);
+    // Fleet mode is gone (QCLI-490, DEC-172 (4bg) item 1 (a)): `scope` is not an
+    // argument the tool takes any more.
+  ).toEqual(["full", "task"]);
 
   for (const surface of ["terminal", "desktop"] as const) {
     opens.length = 0;
@@ -1050,39 +1085,25 @@ test("the dashboard tool registers at session start and opens without focus", as
   }
 });
 
-test("the scope input lands in the view the tool opens", async ($, on) => {
+test("the pane draws no fleet toggle once fleet mode is gone (QCLI-490)", async ($, on) => {
   const opens: Open[] = [];
   mockBoard(on, opens);
   await $.session.start({ ...START });
 
-  for (const surface of ["terminal", "desktop"] as const) {
-    const drawn = async () => {
-      const ui = await $.ui.mount({
-        plugin: "opum-quest",
-        surface,
-        component: "Pane",
-        requestId: "quest-board",
-        props: PANE,
-      });
-
-      return ui;
-    };
-
-    await $.tool.call({ tool: TOOL, scope: "fleet" });
-    const fleet = await drawn();
-    expect((await fleet.find({ key: "fleet" }))?.props.variant).toBe("primary");
-    expect((await fleet.find({ key: "local" }))?.props.variant).toBeUndefined();
-    await fleet.unmount();
-
-    const answer = await $.tool.call({ tool: TOOL, scope: "local" });
-    const local = await drawn();
-    expect((await local.find({ key: "local" }))?.props.variant).toBe("primary");
-    expect((await local.find({ key: "fleet" }))?.props.variant).toBeUndefined();
-    await local.unmount();
-    expect(answer).toEqual({
-      result: "Opened the Quest, local scope.",
-    });
-  }
+  await $.tool.call({ tool: TOOL });
+  const ui = await $.ui.mount({
+    plugin: "opum-quest",
+    surface: "terminal",
+    component: "Pane",
+    requestId: "quest-board",
+    props: PANE,
+  });
+  // The board reads this session's own repository and nothing else, so neither
+  // the Fleet button, the "This repo" button nor the Repo Select exists.
+  expect(await ui.find({ key: "fleet" })).toBeUndefined();
+  expect(await ui.find({ key: "local" })).toBeUndefined();
+  expect(await ui.find({ key: "repo" })).toBeUndefined();
+  await ui.unmount();
 });
 
 test("the full input lands in the size the tool opens", async ($, on) => {
@@ -1578,11 +1599,6 @@ const ALERTS_NOW = Date.UTC(2026, 10, 3, 9, 0, 0);
 
 const ALERTS_ROOT = "/repos";
 
-const ALERT_FLEET: FsEntry[] = [
-  { name: "quest-cli", kind: "dir", size: 0, mtimeMs: 0, isLink: false },
-  { name: "lore-cli", kind: "dir", size: 0, mtimeMs: 0, isLink: false },
-];
-
 type CannedDecision = { id: string; title: string; status: string };
 type CannedTask = {
   id: string;
@@ -1617,12 +1633,6 @@ const noTracker = {
 function mockAlerts(on: On, canned: Canned, calls: string[][] = []) {
   const toasts: { text: string; timeoutMs?: number }[] = [];
   const statuses: (string | undefined)[] = [];
-  on("fs.list", async (_$, e) => ({
-    value: e.path === ALERTS_ROOT ? ALERT_FLEET : [],
-  }));
-  on("fs.exists", async (_$, e) => ({
-    value: e.path.endsWith("/.quest/workspace.toml"),
-  }));
   on("session.root", async () => ({ value: `${ALERTS_ROOT}/quest-cli` }));
   on("process.run", async (_$, e) => {
     calls.push([...e.argv]);
@@ -1683,6 +1693,10 @@ function mountAlertPane($: Engine) {
 test("a waiting decision toasts once with the count, and resolving it toasts the count away", async ($, on) => {
   const clock = mock.clock(on, { now: ALERTS_NOW });
   mock.store(on);
+  // The auto-start gate reads CLAUDECODE (QCLI-490). Empty here: every session
+  // this file starts is a PERSON's, so the pane opens as it always did. The
+  // gate's own cases live in the real-process proof, not in this kit.
+  mock.env(on, {});
   const canned: Canned = {
     decisions: {},
     open: {
@@ -1727,9 +1741,13 @@ test("a waiting decision toasts once with the count, and resolving it toasts the
   await ui.unmount();
 });
 
-test("the same decision id in two workspaces is two decisions in two toasts", async ($, on) => {
+test("the check reads this session's own repository and no other (QCLI-490)", async ($, on) => {
   const clock = mock.clock(on, { now: ALERTS_NOW });
   mock.store(on);
+  // The auto-start gate reads CLAUDECODE (QCLI-490). Empty here: every session
+  // this file starts is a PERSON's, so the pane opens as it always did. The
+  // gate's own cases live in the real-process proof, not in this kit.
+  mock.env(on, {});
   const canned: Canned = {
     decisions: {},
     open: {
@@ -1745,25 +1763,28 @@ test("the same decision id in two workspaces is two decisions in two toasts", as
   canned.decisions["quest-cli"] = [
     { id: "DEC-3", title: "Ship the pair", status: "proposed" },
   ];
+  // A decision with the SAME id in a repository that is not this session's.
+  // Fleet mode is gone (QCLI-490, DEC-172 (4bg) item 1 (a)), so that tracker is
+  // not read and cannot toast -- the board and the check cover this session's
+  // own repository only.
   canned.decisions["lore-cli"] = [
     { id: "DEC-3", title: "Ship the pair", status: "proposed" },
   ];
   await clock.advance(ALERTS_MS);
-  // `DEC-3` is minted per workspace -- `highestSequence` reads that tracker's
-  // own `planning.json` -- so these are two decisions, and the id alone cannot
-  // tell the person which of them a toast is about. The order the fleet is
-  // read in is not what this asserts, so the lines are compared as a set.
-  expect(toasts.map((toast) => toast.text).sort()).toEqual([
-    "lore-cli DEC-3 needs a decision: Ship the pair",
+  expect(toasts.map((toast) => toast.text)).toEqual([
     "quest-cli DEC-3 needs a decision: Ship the pair",
   ]);
-  expect(toasts).toHaveLength(2);
+  expect(toasts).toHaveLength(1);
   await ui.unmount();
 });
 
 test("a pause, a close and a high-priority completion toast; a normal completion does not", async ($, on) => {
   const clock = mock.clock(on, { now: ALERTS_NOW });
   mock.store(on);
+  // The auto-start gate reads CLAUDECODE (QCLI-490). Empty here: every session
+  // this file starts is a PERSON's, so the pane opens as it always did. The
+  // gate's own cases live in the real-process proof, not in this kit.
+  mock.env(on, {});
   const canned: Canned = {
     decisions: {},
     open: {
@@ -1800,28 +1821,44 @@ test("a pause, a close and a high-priority completion toast; a normal completion
     status: "Done",
   };
   await clock.advance(ALERTS_MS);
-  // Three changes, so each is its own toast -- and the medium-priority
-  // completion, which the pane draws like any other, says nothing.
+  // The tick's two reads spend two of its three children, so exactly ONE
+  // departure can be told per tick: QCLI-2 here, QCLI-3 and QCLI-4 on the ticks
+  // after it. Three changes or fewer are each their own toast rather than one
+  // batched line.
+  expect(toasts).toEqual([
+    { text: "QCLI-1 paused in quest-cli: Parked work", timeoutMs: 8_000 },
+    { text: "QCLI-2 closed (won't do) in quest-cli", timeoutMs: 6_000 },
+  ]);
+
+  await clock.advance(ALERTS_MS);
   expect(toasts).toEqual([
     { text: "QCLI-1 paused in quest-cli: Parked work", timeoutMs: 8_000 },
     { text: "QCLI-2 closed (won't do) in quest-cli", timeoutMs: 6_000 },
     { text: "QCLI-3 done: Landed work", timeoutMs: 6_000 },
   ]);
+
+  await clock.advance(ALERTS_MS);
+  // QCLI-4's completion is medium priority, so -- as before -- it says nothing,
+  // and the third tick adds no toast at all.
+  expect(toasts).toHaveLength(3);
   await ui.unmount();
 });
 
 test("more than three changes arrive as one batched toast, with the decisions left out of it", async ($, on) => {
   const clock = mock.clock(on, { now: ALERTS_NOW });
   mock.store(on);
+  // The auto-start gate reads CLAUDECODE (QCLI-490). Empty here: every session
+  // this file starts is a PERSON's, so the pane opens as it always did. The
+  // gate's own cases live in the real-process proof, not in this kit.
+  mock.env(on, {});
   const canned: Canned = {
     decisions: {},
     open: {
       "quest-cli": [
         { id: "QCLI-1", title: "Parked work", status: "In Progress" },
         { id: "QCLI-2", title: "Also parked", status: "In Progress" },
-        { id: "QCLI-3", title: "Retired work", status: "In Progress" },
+        { id: "QCLI-3", title: "Third parked", status: "In Progress" },
         { id: "QCLI-4", title: "Landed work", status: "In Progress" },
-        { id: "QCLI-5", title: "More landed work", status: "In Progress" },
       ],
     },
     views: {},
@@ -1829,25 +1866,17 @@ test("more than three changes arrive as one batched toast, with the decisions le
   const { toasts } = mockAlerts(on, canned);
 
   const ui = await mountAlertPane($);
+  // Three changes that need no child at all (a status moved within the open
+  // set) plus ONE departure, which does: the tick's budget is three children,
+  // and its two reads already spend two, so exactly one `task view` fits.
   canned.open["quest-cli"] = [
     { id: "QCLI-1", title: "Parked work", status: "Paused" },
     { id: "QCLI-2", title: "Also parked", status: "Paused" },
+    { id: "QCLI-3", title: "Third parked", status: "Paused" },
   ];
-  canned.views["QCLI-3"] = {
-    id: "QCLI-3",
-    title: "Retired work",
-    status: "Closed",
-    resolution: { kind: "duplicate" },
-  };
   canned.views["QCLI-4"] = {
     id: "QCLI-4",
     title: "Landed work",
-    status: "Done",
-    priority: "high",
-  };
-  canned.views["QCLI-5"] = {
-    id: "QCLI-5",
-    title: "More landed work",
     status: "Done",
     priority: "high",
   };
@@ -1855,7 +1884,7 @@ test("more than three changes arrive as one batched toast, with the decisions le
     { id: "DEC-141", title: "Answer me", status: "proposed" },
   ];
   await clock.advance(ALERTS_MS);
-  // Five changes, so one line instead of five -- and the decision that became
+  // Four changes, so one line instead of four -- and the decision that became
   // proposed in the same check keeps its own toast rather than being counted
   // into that line.
   expect(toasts).toEqual([
@@ -1864,7 +1893,7 @@ test("more than three changes arrive as one batched toast, with the decisions le
       timeoutMs: 10_000,
     },
     {
-      text: "5 updates: 2 done, 2 paused, 1 closed. Open the board: /quest dashboard",
+      text: "4 updates: 1 done, 3 paused. Open the board: /quest dashboard",
       timeoutMs: 8_000,
     },
   ]);
@@ -1874,6 +1903,10 @@ test("more than three changes arrive as one batched toast, with the decisions le
 test("the first check records a baseline and shows nothing", async ($, on) => {
   const clock = mock.clock(on, { now: ALERTS_NOW });
   mock.store(on);
+  // The auto-start gate reads CLAUDECODE (QCLI-490). Empty here: every session
+  // this file starts is a PERSON's, so the pane opens as it always did. The
+  // gate's own cases live in the real-process proof, not in this kit.
+  mock.env(on, {});
   const canned: Canned = {
     decisions: {
       "quest-cli": [
@@ -1943,7 +1976,6 @@ test("what moved while no session was running arrives as one summary", async ($,
           "QCLI-1": "In Progress",
           "QCLI-2": "In Progress",
           "QCLI-3": "In Progress",
-          "QCLI-4": "In Progress",
         },
       },
     },
@@ -1962,29 +1994,19 @@ test("what moved while no session was running arrives as one summary", async ($,
         status: "Closed",
         resolution: { kind: "superseded" },
       },
-      "QCLI-3": {
-        id: "QCLI-3",
-        title: "Landed work",
-        status: "Done",
-        priority: "high",
-      },
-      "QCLI-4": {
-        id: "QCLI-4",
-        title: "More landed work",
-        status: "Done",
-        priority: "high",
-      },
     },
   };
   const { toasts, statuses } = mockAlerts(on, canned);
 
   const ui = await mountAlertPane($);
   // The first check of the session compares against what the last session
-  // stored, and four updates plus a waiting decision are one line rather than
-  // five toasts.
+  // stored, and two updates plus a waiting decision are one line rather than
+  // three toasts. Two, not three: the tick's budget is three children and its
+  // two reads already spend two, so exactly ONE departure can be told by
+  // looking at it -- QCLI-2 is, and QCLI-3 waits for the next tick.
   expect(toasts).toEqual([
     {
-      text: "While you were away: 1 decision waiting, 4 updates",
+      text: "While you were away: 1 decision waiting, 2 updates",
       timeoutMs: 8_000,
     },
   ]);
@@ -2029,6 +2051,10 @@ test(
 test("the check runs every two minutes with the pane closed, looking a departed task up once", async ($, on) => {
   const clock = mock.clock(on, { now: ALERTS_NOW });
   mock.store(on);
+  // The auto-start gate reads CLAUDECODE (QCLI-490). Empty here: every session
+  // this file starts is a PERSON's, so the pane opens as it always did. The
+  // gate's own cases live in the real-process proof, not in this kit.
+  mock.env(on, {});
   const canned: Canned = {
     decisions: {},
     open: {
@@ -2064,6 +2090,10 @@ test("the check runs every two minutes with the pane closed, looking a departed 
 test("a repository that cannot be read is skipped quietly", async ($, on) => {
   const clock = mock.clock(on, { now: ALERTS_NOW });
   mock.store(on);
+  // The auto-start gate reads CLAUDECODE (QCLI-490). Empty here: every session
+  // this file starts is a PERSON's, so the pane opens as it always did. The
+  // gate's own cases live in the real-process proof, not in this kit.
+  mock.env(on, {});
   const canned: Canned = {
     decisions: {},
     open: {

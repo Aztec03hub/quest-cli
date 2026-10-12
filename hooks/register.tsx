@@ -1,15 +1,12 @@
 import { atom, read, update } from "claude-code";
-import type { EngineInterface, Register, UiOpenResult } from "claude-code";
-
 import type {
-  FsLike,
-  RepoRow,
-  Scope,
-  StatusFilter,
-  Tab,
-  TaskDetail,
-  View,
-} from "../types";
+  EngineInterface,
+  Register,
+  Timer,
+  UiOpenResult,
+} from "claude-code";
+
+import type { RepoRow, StatusFilter, Tab, TaskDetail, View } from "../types";
 import {
   COLUMNS,
   FRAME_COLUMNS,
@@ -20,7 +17,6 @@ import {
   awayLine,
   commentArg,
   decisionListArgs,
-  discoverRoot,
   filterRows,
   isAlertsState,
   isSizeHeld,
@@ -35,9 +31,7 @@ import {
   parseTaskList,
   parseTaskOutcome,
   parseTaskView,
-  parentOf,
   repoNameFromGitCommonDir,
-  reposUnder,
   waitingStatus,
 } from "./quest";
 import type {
@@ -51,14 +45,20 @@ import type {
 const PANE = "quest-board";
 // The pane's way in since QCLI-441: the engine lists this tool to Claude as
 // `mcp__opum-quest__dashboard`, and the generated `quest` skill routes
-// "quest dashboard" -- with `full`, `fleet`, `local` or a task id after it --
-// to it, sending every other argument to the CLI. There is no slash command:
+// "quest dashboard" -- with `full` or a task id after it, fleet mode having
+// gone with QCLI-490 -- to it, sending every other argument to the CLI. There
+// is no slash command:
 // the plugin's own skill owns `/opum-quest:quest`, so a command named `quest`
 // is refused by the engine, and a refused registration makes the whole
 // `session.start` hook throw (measured, QCLI-440).
 const DASHBOARD_TOOL = "dashboard";
 const DASHBOARD_TOOL_NAME = `mcp__opum-quest__${DASHBOARD_TOOL}`;
 const REFRESH_MS = 60_000;
+// No clock tick may spawn more than this many subprocesses (QCLI-490, DEC-172
+// (4bg) item 1 (d)). The refresh tick runs two -- one `task list` and one
+// `git status`; the alerts tick runs its two reads plus, still inside this
+// budget, the `task view` it uses to tell a Done task from a Closed one.
+const MAX_TICK_CHILDREN = 3;
 const PREFS_KEY = "opum-quest.board.view";
 
 const board = atom({ plugin: "opum-quest", key: "board" } as const, {
@@ -68,10 +68,8 @@ const board = atom({ plugin: "opum-quest", key: "board" } as const, {
 });
 const view = atom({ plugin: "opum-quest", key: "view" } as const, {
   tab: "list",
-  scope: "fleet",
   status: "In Progress",
   query: "",
-  repo: "all",
   isCollapsed: false,
   isFull: false,
   readRefs: false,
@@ -92,14 +90,11 @@ const edits = atom({ plugin: "opum-quest", key: "edits" } as const, {
 // Who pane edits are recorded as; the plugin's `actor` option.
 let actor = "jdnewhouse";
 
-// The fleet, discovered at session start: the root it was found under, the
-// repository names under it, and where each one's checkout is. Local mode adds
-// the session's own root.
-let fleetRoot: string | null = null;
-let repos: string[] = [];
+// This session's own repository -- the only one the board reads or writes
+// (QCLI-490, DEC-172 (4bg) item 1 (a): fleet mode is gone). It is resolved from
+// the session on first need, so a process the auto-start gate left alone runs
+// no `git` until something actually reads.
 let localRepo: string | null = null;
-let discoveryNote: string | null = null;
-let isFleetResolved = false;
 let isUncommittedResolved = false;
 let pluginOptions: Record<string, unknown> = {};
 const dirs = new Map<string, string>();
@@ -155,30 +150,25 @@ let lastRendered: {
 // 96 -> 79 -> 96 on the operator's surface.
 let fullAskMade = false;
 
-/**
- * Discovers the fleet once, on whichever comes first: `session.start`, or the
- * first read.
- *
- * The second path is not a fallback for an error -- a pane mounted without a
- * session start (a test, and any host that draws a component without running
- * the session lifecycle) would otherwise draw an empty fleet, and an empty
- * fleet looks exactly like a fleet with nothing in it.
- */
-async function ensureFleet($: EngineInterface): Promise<void> {
-  if (isFleetResolved) {
-    return;
-  }
-  await resolveFleet($, pluginOptions);
-  isFleetResolved = true;
+function dirFor(repo: string): string {
+  return dirs.get(repo) ?? repo;
 }
 
-function dirFor(repo: string): string {
-  return dirs.get(repo) ?? (fleetRoot ? `${fleetRoot}/${repo}` : repo);
-}
+// The root the name below was derived from, so the one `git rev-parse` it takes
+// is spawned ONCE per root rather than on every read. A session's repository
+// does not change under it, and two reads inside one tick (readScopes and
+// countUncommitted) both resolve it -- without this, a refresh tick spawned
+// four children where the budget is three (QCLI-490, DEC-172 (4bg) item 1 (d)).
+let localRoot: string | null = null;
 
 // Reads this session's own repo, the one place the pane may write, from the session.
 async function resolveLocal($: EngineInterface): Promise<string> {
   const root = await $.session.root();
+  if (localRepo !== null && localRoot === root) {
+    dirs.set(localRepo, root);
+
+    return localRepo;
+  }
   let name = root.replace(/\/+$/, "").split("/").pop() ?? root;
   try {
     const ran = await $.process.run(
@@ -194,76 +184,10 @@ async function resolveLocal($: EngineInterface): Promise<string> {
     // Not a checkout, or git is not on PATH: the directory name will do.
   }
   localRepo = name;
+  localRoot = root;
   dirs.set(name, root);
 
   return name;
-}
-
-function parseRepoList(value: unknown): string[] {
-  if (typeof value !== "string") {
-    return [];
-  }
-
-  return [...new Set(value.split(/[\s,]+/).filter((one) => one.trim() !== ""))];
-}
-
-/**
- * Where the fleet comes from, in the order the plugin's options give it: an
- * explicit list, then an explicit root, then the nearest ancestor of the
- * session's own directory that holds Quest workspaces.
- *
- * Discovery rather than a constant is the point: the list drawn here is the
- * operator's own set of Quest workspaces, not a roster this file has to be
- * edited to follow.
- */
-async function resolveFleet(
-  $: EngineInterface,
-  options: Record<string, unknown>,
-): Promise<void> {
-  dirs.clear();
-  fleetRoot = null;
-  discoveryNote = null;
-  repos = [];
-  // A noun of `$` is never passed as a value, so the two calls discovery needs
-  // are spelled out at the call site.
-  const fs: FsLike = {
-    list: (path) => $.fs.list(path),
-    exists: (path) => $.fs.exists(path),
-  };
-  const configured = parseRepoList(options.repos);
-  if (configured.length > 0) {
-    repos = configured;
-    if (typeof options.root === "string" && options.root.trim()) {
-      fleetRoot = options.root.trim();
-    }
-  } else {
-    const root = typeof options.root === "string" ? options.root.trim() : "";
-    const root_ = root !== "" ? root : null;
-    if (root_) {
-      fleetRoot = root_;
-      repos = await reposUnder(fs, root_);
-    } else {
-      const sessionRoot = await $.session.root();
-      const found = await discoverRoot(fs, sessionRoot);
-      if (found) {
-        fleetRoot = found.root;
-        repos = found.repos;
-      } else {
-        discoveryNote = `No Quest workspaces found above ${parentOf(sessionRoot)}. Add the plugin's root or repos option, or use this-repo scope.`;
-      }
-    }
-  }
-  if (fleetRoot) {
-    for (const repo of repos) {
-      dirs.set(repo, `${fleetRoot}/${repo}`);
-    }
-  }
-  // The session's own repository is always on the board, even when it sits
-  // outside the discovered root -- and it keeps the session's path, not the
-  // discovered one, because that is the tree this pane may write in.
-  if (localRepo && !repos.includes(localRepo)) {
-    repos = [...repos, localRepo].sort();
-  }
 }
 
 async function quest($: EngineInterface, repo: string, args: string[]) {
@@ -322,12 +246,17 @@ let isRefreshing = false;
 let isRefreshQueued = false;
 
 /**
- * Reads every repository in scope.
+ * Reads this session's own repository.
  *
  * A refresh asked for while one is in flight is not dropped -- it is queued,
  * and the loop reads again with the view as it stands then. Dropping it left
- * the board drawing the previous scope: a toggle or a filter pressed during a
- * read settled back into the read it was meant to replace.
+ * the board drawing the previous view: a filter pressed during a read settled
+ * back into the read it was meant to replace. This queue is the EXPLICIT
+ * refresh path -- the button, a tab or filter change, a write -- so a person's
+ * ask that lands mid-read is COALESCED into one more read rather than lost.
+ * The clock tick is the other path and does not reach here while it is running:
+ * it SKIPS its own tick instead, so a slow read can never stack ticks
+ * (QCLI-490, DEC-172 (4bg) item 1 (c)).
  */
 async function refresh($: EngineInterface): Promise<void> {
   if (isRefreshing) {
@@ -347,15 +276,12 @@ async function refresh($: EngineInterface): Promise<void> {
 
 async function readScopes($: EngineInterface): Promise<void> {
   await resolveLocal($);
-  await ensureFleet($);
   await ensureUncommitted($);
-  const { scope, status: picked, tab, readRefs } = await read($, view);
+  const { status: picked, tab, readRefs } = await read($, view);
   const status: StatusFilter = tab === "kanban" ? "open" : picked;
-  const shown = scope === "local" ? (localRepo ? [localRepo] : []) : repos;
   await update($, board, (current) => ({ ...current, isLoading: true }));
-  const rows = await Promise.all(
-    shown.map((repo) => readRepo($, repo, status, readRefs)),
-  );
+  const rows =
+    localRepo === null ? [] : [await readRepo($, localRepo, status, readRefs)];
   const refreshedAt = await $.clock.now();
   await update($, board, () => ({ rows, refreshedAt, isLoading: false }));
 }
@@ -540,14 +466,16 @@ async function checkAlerts($: EngineInterface): Promise<void> {
   }
   try {
     await resolveLocal($);
-    await ensureFleet($);
     const stored = await $.store.get(ALERTS_KEY);
     const isBaseline = !isAlertsState(stored);
     const previous: AlertsState = isBaseline
       ? { decisions: {}, tasks: {} }
       : stored;
-    const reads = await Promise.all(repos.map((repo) => readAlerts($, repo)));
-    const read = reads.filter((one): one is AlertsRead => one !== null);
+    // This session's own repository only (QCLI-490), so a check costs two
+    // children -- `decision list` and `task list` -- instead of two per
+    // repository across a fleet.
+    const one = localRepo === null ? null : await readAlerts($, localRepo);
+    const read = one === null ? [] : [one];
     if (read.length === 0) {
       return;
     }
@@ -562,7 +490,19 @@ async function checkAlerts($: EngineInterface): Promise<void> {
       ids.add(task.id);
       openIds.set(task.repo, ids);
     }
+    // Classifying a departed task costs a third child, and a tick's budget is
+    // {@link MAX_TICK_CHILDREN} (QCLI-490, DEC-172 (4bg) item 1 (d)). A tick
+    // that finds more departed ids than the budget allows classifies what it
+    // can and CARRIES the rest in the stored state below, so the next tick sees
+    // them as departed again and none is ever lost -- the loop this replaced
+    // spawned one child per departed task, unbounded.
     const departed: AlertTask[] = [];
+    const carried: string[] = [];
+    // Each read repo costs TWO children -- its `decision list` and its
+    // `task list` -- so the reads spend twice their count. Seeding this with
+    // `read.length` alone let the tick spawn four (QCLI-490 review round 1,
+    // blocker): two reads plus two `task view` look-ups.
+    let spent = read.length * 2;
     for (const [repo, ids] of Object.entries(previous.tasks)) {
       if (!read.some((one) => one.repo === repo)) {
         continue;
@@ -571,6 +511,11 @@ async function checkAlerts($: EngineInterface): Promise<void> {
         if (openIds.get(repo)?.has(id)) {
           continue;
         }
+        if (spent >= MAX_TICK_CHILDREN) {
+          carried.push(`${repo}\u0000${id}`);
+          continue;
+        }
+        spent += 1;
         const left = await lookUpTask($, repo, id);
         if (left) {
           departed.push(left);
@@ -608,6 +553,15 @@ async function checkAlerts($: EngineInterface): Promise<void> {
     for (const one of read) {
       tasks[one.repo] = {};
     }
+    // Re-add the ids this tick could not afford to classify, with the status
+    // they carried before, so they stay in the stored state and read as
+    // departed again next tick rather than being dropped unclassified.
+    for (const key of carried) {
+      const [repo = "", id = ""] = key.split("\u0000");
+      const ids = tasks[repo] ?? {};
+      ids[id] = previous.tasks[repo]?.[id] ?? "";
+      tasks[repo] = ids;
+    }
     for (const task of open) {
       const ids = tasks[task.repo] ?? {};
       ids[task.id] = task.status;
@@ -628,18 +582,93 @@ async function checkAlerts($: EngineInterface): Promise<void> {
  * Starts the alerts check: once now, and every {@link ALERTS_MS} after that.
  *
  * Started from `session.start` and, on whichever comes first, the first draw --
- * the same two paths the fleet and the uncommitted count use, and for the same
+ * the same two paths the uncommitted count uses, and for the same
  * reason: `claude plugin test` never fires `session.start`, so a kit-mounted
  * pane would otherwise never alert at all.
+ */
+// The alerts clock's handle, kept so `session.end` can cancel it, and its
+// in-flight guard, so a check slower than its period is SKIPPED rather than
+// started on top of itself (QCLI-490, DEC-172 (4bg) item 1 (c)).
+let alertsTimer: Timer | null = null;
+let isAlertsTicking = false;
+
+/**
+ * One check, guarded in flight. The whole callback is the guarded unit, so a
+ * tick that finds the previous one still running is skipped -- the shape the
+ * host-load incident had, where every tick's `void (async …)` returned at once
+ * and the next started over it.
+ */
+function tickAlerts($: EngineInterface): void {
+  if (isAlertsTicking) {
+    return;
+  }
+  isAlertsTicking = true;
+  void (async () => {
+    try {
+      await checkAlerts($);
+    } finally {
+      isAlertsTicking = false;
+    }
+  })();
+}
+
+/**
+ * Starts the alerts check: once now, and every {@link ALERTS_MS} after that.
+ *
+ * Started from `session.start` and, on whichever comes first, the first draw --
+ * the same two paths the uncommitted count uses, and for the same reason:
+ * `claude plugin test` never fires `session.start`, so a kit-mounted pane would
+ * otherwise never alert at all. Registered ONCE per process (the module guard),
+ * its handle kept, and cancelled at `session.end`.
  */
 function startAlerts($: EngineInterface): void {
   if (isAlertsStarted) {
     return;
   }
   isAlertsStarted = true;
-  void checkAlerts($);
-  $.clock.every(ALERTS_MS, () => {
-    void checkAlerts($);
+  tickAlerts($);
+  alertsTimer = $.clock.every(ALERTS_MS, () => {
+    tickAlerts($);
+  });
+}
+
+// The pane's ONE refresh clock for this process, and the guards that keep it
+// single (QCLI-490, DEC-172 (4bg) item 1 (c)). `$.clock.every` hands back a
+// handle, but the engine does not serialize a callback that returns before its
+// work is done: the old code fired `void (async …)()` and returned at once, so
+// a slow read-back let the next tick start on top of it. Two guards stand in
+// for the serialization the engine cannot give a `void` callback: the
+// registration is guarded once per process, and the WHOLE callback is guarded
+// in flight, so a tick that finds the previous one running is skipped.
+let refreshTimer: Timer | null = null;
+let isRefreshTicking = false;
+
+/**
+ * Registers the refresh clock ONCE per process; every later call is a no-op.
+ * Called where the pane is actually opened -- the interactive `session.start`,
+ * or an explicit open (the `dashboard` tool, the band's button) in a process
+ * the auto-start gate left alone -- and cancelled at `session.end`.
+ */
+function ensureClock($: EngineInterface): void {
+  if (refreshTimer !== null) {
+    return;
+  }
+  refreshTimer = $.clock.every(REFRESH_MS, () => {
+    if (isRefreshTicking) {
+      return;
+    }
+    isRefreshTicking = true;
+    void (async () => {
+      try {
+        const panes = await $.ui.panes();
+        if (panes.some((pane) => pane.id === PANE && pane.isShown)) {
+          await refresh($);
+          await countUncommitted($);
+        }
+      } finally {
+        isRefreshTicking = false;
+      }
+    })();
   });
 }
 
@@ -735,13 +764,9 @@ async function closeTask($: EngineInterface, task: TaskDetail): Promise<void> {
 }
 
 async function savePrefs($: EngineInterface): Promise<void> {
-  const { tab, scope, status, isCollapsed, isFull, readRefs } = await read(
-    $,
-    view,
-  );
+  const { tab, status, isCollapsed, isFull, readRefs } = await read($, view);
   await $.store.set(PREFS_KEY, {
     tab,
-    scope,
     status,
     isCollapsed,
     isFull,
@@ -863,17 +888,6 @@ async function setFullState(
   await savePrefs($);
 }
 
-async function setScope($: EngineInterface, scope: Scope): Promise<void> {
-  await update($, view, (current) => ({
-    ...current,
-    scope,
-    repo: "all",
-    selected: null,
-  }));
-  await savePrefs($);
-  await refresh($);
-}
-
 async function setTab($: EngineInterface, tab: Tab): Promise<void> {
   await update($, view, (current) => ({ ...current, tab, selected: null }));
   await savePrefs($);
@@ -919,20 +933,17 @@ async function select(
  * Resolves a bare task id to the repository that holds it, so the `dashboard`
  * tool's `task` can name one without the caller knowing where it lives.
  *
- * The board's own rows cannot answer this: they are read at one status filter
- * and one scope, so a task that is Done, or in a repository the current view
- * leaves out, would read as unknown while existing. One `task view` per
- * workspace is the existence check that depends on neither. A workspace that
- * cannot be read is not a match either way -- the board's own "Could not read"
- * line reports that, and this probe decides nothing about it.
+ * The board's own rows cannot answer this: they are read at one status filter,
+ * so a task that is Done would read as unknown while existing. One `task view`
+ * is the existence check that depends on the filter. A repository that cannot
+ * be read is not a match either way -- the board's own "Could not read" line
+ * reports that, and this probe decides nothing about it.
  */
 async function findTask(
   $: EngineInterface,
   id: string,
 ): Promise<{ repo: string; id: string } | null> {
-  const candidates = [
-    ...new Set([...repos, ...(localRepo ? [localRepo] : [])]),
-  ];
+  const candidates = localRepo === null ? [] : [localRepo];
   for (const repo of candidates) {
     try {
       await quest($, repo, ["task", "view", id, "--max-notes", "1"]);
@@ -952,8 +963,8 @@ function quoted(value: unknown): string {
 
 /**
  * The `dashboard` tool's one line, naming what it opened and the state it
- * applied -- the design's own example reads "Opened the Quest, fleet scope,
- * OCLI-8 selected." (`pane-dashboard-tool-design.md`).
+ * applied -- the design's own example reads "Opened the Quest, OCLI-8
+ * selected." (`pane-dashboard-tool-design.md`).
  *
  * The size it names is the one the surface granted, read off the pane's draw
  * that follows the open (DEC-154 rule 4): "full size" only when the drawn
@@ -968,7 +979,6 @@ function quoted(value: unknown): string {
  * width instead of claiming the width is kept.
  */
 function dashboardOpened(
-  scope: Scope | undefined,
   isFull: boolean | undefined,
   taskId: string | null,
   draw: {
@@ -979,9 +989,6 @@ function dashboardOpened(
   } | null,
 ): string {
   const parts = ["Opened the Quest"];
-  if (scope) {
-    parts.push(scope === "fleet" ? "fleet scope" : "local scope");
-  }
   if (taskId) {
     parts.push(`${taskId} selected`);
   }
@@ -1093,8 +1100,16 @@ export const register: Register = (on, options) => {
   }
 
   on("session.start", async ($, e, next) => {
-    await resolveLocal($);
-    await ensureFleet($);
+    // The auto-start gate (QCLI-490, DEC-172 (4bg) item 1 (b)). A teammate
+    // process carries CLAUDECODE=1; a headless/`-p` run, the SDK and a
+    // dynamic-workflow child arrive with `!e.isInteractive`. Mod clocks running
+    // in EVERY Claude process were the 2026-10-12 host-load incident (load
+    // reached ~315), and this pane opened and re-read in every one of them. In
+    // such a process: no pane, no clock and no read-back -- so not one child is
+    // spawned for a view nobody draws. The tool is still registered below, so a
+    // person's explicit open (the `dashboard` tool, the band's button) works in
+    // a gated process too and starts the clock from then on.
+    const gated = !e.isInteractive || (await $.env.get("CLAUDECODE")) === "1";
 
     const stored = await $.store.get(PREFS_KEY);
     if (isStoredView(stored)) {
@@ -1117,16 +1132,10 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: DASHBOARD_TOOL,
       description:
-        "Open the Quest pane: the tasks being worked on across the operator's Quest workspaces, and the detail of one. Use it when the person asks to see the board or a task in the pane.",
+        "Open the Quest pane: the tasks being worked on in this session's own repository, and the detail of one. Use it when the person asks to see the board or a task in the pane.",
       inputSchema: {
         type: "object",
         properties: {
-          scope: {
-            type: "string",
-            enum: ["fleet", "local"],
-            description:
-              "fleet draws every Quest workspace; local only this session's own repository.",
-          },
           full: {
             type: "boolean",
             description: "Open at the largest size the surface allows.",
@@ -1148,6 +1157,16 @@ export const register: Register = (on, options) => {
     fullAsk = null;
     awaitingGrant = false;
 
+    // A gated process stops here. Everything below opens the pane, reads the
+    // repository, or registers a clock, and none of it is wanted for a view
+    // nobody draws -- this is the branch that makes a teammate or headless
+    // process spawn zero children.
+    if (gated) {
+      return next(e);
+    }
+
+    await resolveLocal($);
+
     // No viewport has been measured yet -- `session.start` runs ahead of the
     // first draw -- so a stored full mode opens at the surface's default and
     // the first render asks once more, now that it can size it (DEC-154 rule 2
@@ -1156,15 +1175,26 @@ export const register: Register = (on, options) => {
     void refresh($);
     void ensureUncommitted($);
     startAlerts($);
-    $.clock.every(REFRESH_MS, () => {
-      void (async () => {
-        const panes = await $.ui.panes();
-        if (panes.some((pane) => pane.id === PANE && pane.isShown)) {
-          await refresh($);
-          await countUncommitted($);
-        }
-      })();
-    });
+    // The refresh clock, registered once per process. An explicit open in a
+    // gated process registers it too, so the pane polls (only while shown) from
+    // that open on.
+    ensureClock($);
+
+    return next(e);
+  });
+
+  // The clocks belong to this process, so `session.end` is where they are
+  // cancelled (QCLI-490, DEC-172 (4bg) item 1 (c)): nothing else stops them,
+  // and a timer left running would poll for a session that is gone. A fresh
+  // `session.start` in the same process can register new ones.
+  on("session.end", async (_$, e, next) => {
+    refreshTimer?.cancel();
+    refreshTimer = null;
+    isRefreshTicking = false;
+    alertsTimer?.cancel();
+    alertsTimer = null;
+    isAlertsStarted = false;
+    isAlertsTicking = false;
 
     return next(e);
   });
@@ -1173,17 +1203,7 @@ export const register: Register = (on, options) => {
   // `mcp__opum-quest__dashboard` and routes a call here.
   on("tool.call", { tool: DASHBOARD_TOOL_NAME }, async ($, e) => {
     // Bad input is reported, never guessed at -- the design's rule for a task
-    // id applies to the other two arguments as well, and a rejected call opens
-    // nothing at all.
-    const scope: Scope | undefined =
-      e.scope === undefined || e.scope === "fleet" || e.scope === "local"
-        ? e.scope
-        : undefined;
-    if (e.scope !== undefined && scope === undefined) {
-      return {
-        deny: `Unknown scope ${quoted(e.scope)}: the Quest takes "fleet" or "local". Nothing was opened.`,
-      };
-    }
+    // id applies to `full` as well, and a rejected call opens nothing at all.
     const full: boolean | undefined =
       typeof e.full === "boolean" ? e.full : undefined;
     if (e.full !== undefined && full === undefined) {
@@ -1199,7 +1219,6 @@ export const register: Register = (on, options) => {
     }
 
     await resolveLocal($);
-    await ensureFleet($);
     // Resolved before anything is opened, so an id that resolves nowhere
     // leaves the pane as it was rather than showing some other task.
     const target = wanted ? await findTask($, wanted) : null;
@@ -1209,23 +1228,22 @@ export const register: Register = (on, options) => {
       };
     }
 
-    // Scope first: it clears the selection, so a named task is selected after
-    // the view it will be selected in is settled.
-    if (scope !== undefined) {
-      await setScope($, scope);
-    }
     if (full !== undefined) {
       await setFullState($, full);
     }
     if (target) {
       await select($, target.repo, target.id);
     }
-    // Re-placed so a size and a scope just chosen are the ones drawn, and
-    // WITHOUT focus: Claude may call this unasked while the person is typing,
-    // and the pane never takes the keyboard for that (the design's rule, and
-    // the same one a full mode restored at `session.start` follows).
+    // Re-placed so a size just chosen is the one drawn, and WITHOUT focus:
+    // Claude may call this unasked while the person is typing, and the pane
+    // never takes the keyboard for that (the design's rule, and the same one a
+    // full mode restored at `session.start` follows).
     await $.ui.close({ id: PANE });
     const opened = await openPane($, await read($, view));
+    // A person's or a model's open in a process the auto-start gate left alone
+    // registers the clock here, so the pane polls (only while shown) from this
+    // open on; it is a no-op when `session.start` already registered it.
+    ensureClock($);
     void refresh($);
 
     // What the call reports is what the engine's record says happened, not what
@@ -1247,7 +1265,7 @@ export const register: Register = (on, options) => {
         : null;
     return {
       result: (await boardIsShown($))
-        ? dashboardOpened(scope, full, target?.id ?? null, draw)
+        ? dashboardOpened(full, target?.id ?? null, draw)
         : dashboardWaiting(opened.isPlaced ? undefined : opened.reason),
     };
   });
@@ -1333,7 +1351,7 @@ export const register: Register = (on, options) => {
       void openPane($, current, viewport);
     }
 
-    const shown = filterRows(rows, current.query, current.repo);
+    const shown = filterRows(rows, current.query);
     const busy = shown.filter((row) => row.tasks.length > 0);
     const failed = rows.filter((row) => row.error !== null);
     const total = busy.reduce((sum, row) => sum + row.tasks.length, 0);
@@ -1424,7 +1442,7 @@ export const register: Register = (on, options) => {
     const summary =
       refreshedAt === null
         ? "Reading the trackers…"
-        : `${total} ${statusWords(current.status)} ${total === 1 ? "task" : "tasks"} in ${busy.length} ${busy.length === 1 ? "repo" : "repos"}, checked ${clockTime(refreshedAt)}${isLoading ? ", refreshing" : ""}${current.readRefs ? " (across refs)" : ""}`;
+        : `${total} ${statusWords(current.status)} ${total === 1 ? "task" : "tasks"} in ${localRepo ?? "this repo"}, checked ${clockTime(refreshedAt)}${isLoading ? ", refreshing" : ""}${current.readRefs ? " (across refs)" : ""}`;
 
     const selectedKey = current.selected
       ? `${current.selected.repo}:${current.selected.id}`
@@ -1527,7 +1545,7 @@ export const register: Register = (on, options) => {
           <Text dimColor wrap="truncate">
             {refreshedAt === null
               ? "Reading the trackers…"
-              : `${tasks.length} open ${tasks.length === 1 ? "task" : "tasks"} ${current.scope === "fleet" ? "in the fleet" : `in ${localRepo}`}, checked ${clockTime(refreshedAt)}. Read-only: open a task from the List tab to change it.`}
+              : `${tasks.length} open ${tasks.length === 1 ? "task" : "tasks"} in ${localRepo ?? "this repo"}, checked ${clockTime(refreshedAt)}. Read-only: open a task from the List tab to change it.`}
           </Text>
           {banner}
           <Box marginTop={1}>
@@ -1564,22 +1582,6 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column">
         {tabs}
         <Box>
-          <Button
-            key="fleet"
-            label="Fleet"
-            hotkey="f"
-            variant={current.scope === "fleet" ? "primary" : undefined}
-            onPress={() => void setScope($, "fleet")}
-          />
-          <Text> </Text>
-          <Button
-            key="local"
-            label={localRepo ?? "This repo"}
-            hotkey="l"
-            variant={current.scope === "local" ? "primary" : undefined}
-            onPress={() => void setScope($, "local")}
-          />
-          <Text> </Text>
           <Button
             key="refs"
             label="Refs"
@@ -1642,24 +1644,8 @@ export const register: Register = (on, options) => {
               void setStatus($, value as StatusFilter)
             }
           />
-          {current.scope === "fleet" && (
-            <Select
-              key="repo"
-              label="Repo"
-              value={current.repo}
-              options={[
-                { value: "all", label: "All repos" },
-                ...repos.map((repo) => ({ value: repo })),
-              ]}
-              onSelect={(value: string) =>
-                void update($, view, (v) => ({
-                  ...v,
-                  repo: value,
-                  selected: null,
-                }))
-              }
-            />
-          )}
+          {/* The repo Select went with fleet mode (QCLI-490): the board reads
+              this session's own repository and nothing else. */}
         </Box>
         <Text dimColor wrap="truncate">
           {summary}
@@ -1678,11 +1664,6 @@ export const register: Register = (on, options) => {
             {refsLine}
           </Text>
         )}
-        {discoveryNote && current.scope === "fleet" && (
-          <Text dimColor wrap="truncate">
-            {discoveryNote}
-          </Text>
-        )}
         {hasConflict && (
           <Text dimColor wrap="truncate">
             * marks a task whose refs disagree about its status; origin/dev is
@@ -1690,7 +1671,7 @@ export const register: Register = (on, options) => {
             session&apos;s call.
           </Text>
         )}
-        {current.scope === "local" && localRepo && (
+        {localRepo && (
           <Input
             key="new-task"
             placeholder={`New task in ${localRepo}`}
@@ -1707,7 +1688,7 @@ export const register: Register = (on, options) => {
                 <Text dimColor>
                   {current.query
                     ? "No tasks match. Clear the filter or pick another status."
-                    : `No ${statusWords(current.status)} tasks ${current.scope === "fleet" ? "in the fleet" : "in this repo"}.`}
+                    : `No ${statusWords(current.status)} tasks in this repo.`}
                 </Text>
               </Box>
             )}

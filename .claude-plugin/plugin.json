@@ -1,7 +1,7 @@
 {
   "name": "opum-quest",
   "version": "0.13.0",
-  "description": "Drive the quest CLI: create, list, view, edit, complete, and archive tasks, drafts, milestones, and decisions in a Quest-initialized workspace instead of editing tracker state directly. Cut from the same quest-cli repository and tag as the CLI itself, so this skill can never describe a version you don't have. Also ships the Quest board: a pane listing the tasks being worked on across the operator's Quest workspaces, editable in the session's own repository.",
+  "description": "Drive the quest CLI: create, list, view, edit, complete, and archive tasks, drafts, milestones, and decisions in a Quest-initialized workspace instead of editing tracker state directly. Cut from the same quest-cli repository and tag as the CLI itself, so this skill can never describe a version you don't have. Also ships the Quest board: a pane listing the tasks being worked on in the session's own repository, editable there.",
   "author": {
     "name": "Opum AI",
     "url": "https://github.com/opum-ai"
@@ -17,18 +17,6 @@
       "title": "Quest actor id",
       "description": "Who edits made in the pane are recorded as (--actor, kind human)",
       "default": "jdnewhouse"
-    },
-    "root": {
-      "type": "string",
-      "title": "Fleet root",
-      "description": "The directory holding your Quest workspaces. Unset, discovery walks up from the session's own directory.",
-      "default": ""
-    },
-    "repos": {
-      "type": "string",
-      "title": "Repositories",
-      "description": "Comma-separated repository names to put on the board, when you would rather name them than discover them. Empty discovers them.",
-      "default": ""
     },
     "alerts": {
       "type": "string",

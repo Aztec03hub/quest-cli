@@ -36,9 +36,6 @@ export type RepoRow = {
   coverage: Coverage | null;
 };
 
-/** `local` is the session's own repository, the one the pane may write in. */
-export type Scope = "local" | "fleet";
-
 // "open" is every status but Done and Closed; the rest are Quest statuses.
 export type StatusFilter =
   | "open"
@@ -58,10 +55,8 @@ export type Board = {
 
 export type View = {
   tab: Tab;
-  scope: Scope;
   status: StatusFilter;
   query: string;
-  repo: string;
   isCollapsed: boolean;
   /** The full-screen toggle: the largest pane the surface allows, or the normal size. */
   isFull: boolean;
@@ -97,12 +92,6 @@ export type Detail = {
   task: TaskDetail | null;
   error: string | null;
   isLoading: boolean;
-};
-
-/** The part of `$.fs` repository discovery uses. */
-export type FsLike = {
-  list: (path?: string) => Promise<readonly { name: string; kind: string }[]>;
-  exists: (path: string) => Promise<boolean>;
 };
 
 declare module "claude-code" {

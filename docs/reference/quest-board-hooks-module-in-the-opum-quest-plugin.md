@@ -16,25 +16,66 @@ timestamp: 2026-10-02T16:50:38.326Z
 
 The `opum-quest` plugin ships two things from this repository: the `quest` skill
 and a Claude Code **hooks module** — the Quest board, a pane listing the tasks
-being worked on across the operator's Quest workspaces and editable in the
-session's own repository. This doc records what the module is, the execution
-choices behind it, the alternatives that were rejected, and the one half of its
-qualification that runs only on a machine.
+being worked on in the session's own repository and editable there. This doc
+records what the module is, the execution choices behind it, the alternatives
+that were rejected, and the one half of its qualification that runs only on a
+machine.
 
 Built under [QCLI-431](../../.quest/tasks/QCLI-431.json), from the design brief
 at `opum-doc` `docs/reference/quest-board-mod-design-brief.md` and a
-session-local prototype.
+session-local prototype. Fleet mode — the pane's read of every Quest workspace
+under a discovered root — was **removed** by
+[QCLI-490](../../.quest/completed/QCLI-490.json) under DEC-172 (4bg) item 1 (a):
+the board, the alerts and the `dashboard` tool read this session's own
+repository and nothing else.
 
 ## What the module is
 
 | Path | What it holds |
 |---|---|
-| `hooks/register.tsx` | The pane: list and kanban tabs, fleet or this-repo scope, search, status and repo pickers, detail with acceptance criteria, comments and the latest note, collapse. |
-| `hooks/quest.ts` | Argv building, both `task list` parsers, coverage parsing, and repository discovery — split out so they are testable without a surface. |
+| `hooks/register.tsx` | The pane: list and kanban tabs, search, status picker, detail with acceptance criteria, comments and the latest note, collapse. |
+| `hooks/quest.ts` | Argv building, both `task list` parsers, coverage parsing, and the session's own repository name — split out so they are testable without a surface. |
 | `types/index.d.ts` | The module's state contract and its drawn shapes. |
 | `tests/` | Three engine test files, run by Claude Code's own runner. |
-| `.claude-plugin/plugin.json` | The manifest: the types contract, the actor option, and the `root`/`repos` options. |
+| `.claude-plugin/plugin.json` | The manifest: the types contract and the actor option. |
 | `scripts/mod-test.mjs` | Stages what the plugin ships and runs the three tools against the stage. |
+
+## Auto-start, the clocks, and what a refresh does (QCLI-490, DEC-172 (4bg) item 1)
+
+`session.start` opens a pane, registers a clock and runs its initial read-back
+**only in a process a person is at the prompt of**. When `!e.isInteractive` (a
+headless `-p` run, the SDK, a dynamic-workflow child) or
+`$.env.get("CLAUDECODE") === "1"` (a teammate), it registers the `dashboard`
+tool and stops: no pane, no clock and no read, so the process spawns no child at
+all for a view nobody draws. That is the 2026-10-12 host-load incident's fix —
+host load reached ~315 with every Claude process opening the board and re-reading
+on its own clock. An explicit open by the person (the tool, or the band's
+button) still works in a gated process, and starts the clock from then on.
+
+The clocks are **once per process** and cancelled at `session.end`:
+
+- **The refresh clock** (60 s) is registered behind a module guard, its handle
+  kept, and it does its work only while the pane is shown.
+- **The alerts clock** (120 s) is once per process too, and cancelled the same
+  way.
+- **The WHOLE tick callback is guarded in flight.** A tick that finds the
+  previous one still running is **skipped**, never stacked — the incident's
+  shape was a `void (async …)` callback returning at once while the next tick
+  started on top of it.
+- **A person's explicit refresh that finds a read in flight is COALESCED, not
+  dropped**: one more read runs after the current one, with the view as it
+  stands then. Dropping it left the board drawing the view the person had
+  already replaced.
+- **No tick spawns more than three subprocesses**, and every subprocess carries
+  a timeout. The refresh tick runs two — one `task list` and one `git status`.
+  The alerts tick runs its two reads plus, still inside the same budget, the one
+  `task view` it uses to tell a Done task from a Closed one; a tick with more
+  departed tasks than the budget allows classifies what it can and carries the
+  rest into the next tick rather than dropping them.
+
+The counts this rests on — real processes spawned and watched, both ways, with
+the gate removed as a control and an eight-process soak — are in
+[QCLI-490](../../.quest/completed/QCLI-490.json).
 
 ## The plugin root stays the repository root
 
@@ -125,8 +166,9 @@ and silently wrong for a genuine collision. See
 - **Keyboard card movement on the kanban** (brief recommendation 5) is deferred.
   The list tab carries every edit; card movement is new behaviour and new test
   surface that was not asked for.
-- **Editing from the fleet view** is not reached: v1 keeps the fleet view
-  read-only, so there is nothing to decide there yet.
+- **Editing from a view of other repositories** is not reached, and can no
+  longer arise: fleet mode went with QCLI-490, so the board only ever draws the
+  one repository the pane may write in.
 - **The actor identity for pane edits** is the operator's, and is the one thing
   in the build that is not this repository's to settle.
 

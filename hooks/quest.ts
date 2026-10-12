@@ -1,12 +1,11 @@
-// The Quest board's non-drawing half: the argv every read and write builds, the
-// parsers for both `task list` shapes, and repository discovery.
+// The Quest board's non-drawing half: the argv every read and write builds and
+// the parsers for both `task list` shapes.
 //
 // It is a separate module from `register.tsx` so each of those can be tested
 // against the engine without a surface -- the tests import this file directly.
 
 import type {
   Coverage,
-  FsLike,
   QuestTask,
   RepoRow,
   StatusFilter,
@@ -270,14 +269,18 @@ export function isStoredView(
   value: unknown,
 ): value is Pick<
   View,
-  "tab" | "scope" | "status" | "isCollapsed" | "isFull" | "readRefs"
+  "tab" | "status" | "isCollapsed" | "isFull" | "readRefs"
 > {
   const v = value as Partial<View> | null;
 
+  // A view stored by a version that still had fleet mode carries a `scope`
+  // ("fleet" or "local") and a `repo`. Nothing checks or reads them any more --
+  // the board is this session's own repository only -- so an older stored view
+  // is accepted as it is and reads as local rather than being refused
+  // (QCLI-490, DEC-172 (4bg) item 1 (a)).
   return (
     !!v &&
     (v.tab === "list" || v.tab === "kanban") &&
-    (v.scope === "local" || v.scope === "fleet") &&
     STATUSES.some((s) => s.value === v.status) &&
     typeof v.isCollapsed === "boolean" &&
     (typeof v.isFull === "boolean" || v.isFull === undefined) &&
@@ -481,25 +484,19 @@ export function parseTaskView(stdout: string): TaskDetail {
 }
 
 /** The search and repo filters, applied to what was fetched. */
-export function filterRows(
-  rows: RepoRow[],
-  query: string,
-  repo: string,
-): RepoRow[] {
+export function filterRows(rows: RepoRow[], query: string): RepoRow[] {
   const needle = query.trim().toLowerCase();
 
-  return rows
-    .filter((row) => repo === "all" || row.repo === repo)
-    .map((row) => ({
-      ...row,
-      tasks: needle
-        ? row.tasks.filter((task) =>
-            [task.id, task.title, ...task.labels].some((field) =>
-              field.toLowerCase().includes(needle),
-            ),
-          )
-        : row.tasks,
-    }));
+  return rows.map((row) => ({
+    ...row,
+    tasks: needle
+      ? row.tasks.filter((task) =>
+          [task.id, task.title, ...task.labels].some((field) =>
+            field.toLowerCase().includes(needle),
+          ),
+        )
+      : row.tasks,
+  }));
 }
 
 // The arguments every pane edit adds: the operator, acting in their own pane.
@@ -518,66 +515,6 @@ export function commentArg(
   return JSON.stringify([
     { id: `c-${nowMs}`, authorId: author, body, createdAt },
   ]);
-}
-
-/** A Quest workspace is a directory holding `.quest/workspace.toml`. */
-export const QUEST_WORKSPACE = ".quest/workspace.toml";
-
-export function parentOf(path: string): string {
-  const trimmed = path.replace(/\/+$/, "");
-  const at = trimmed.lastIndexOf("/");
-
-  return at <= 0 ? "/" : trimmed.slice(0, at);
-}
-
-/** The Quest workspaces directly under one directory, by name. */
-export async function reposUnder(fs: FsLike, root: string): Promise<string[]> {
-  let entries: readonly { name: string; kind: string }[];
-  try {
-    entries = await fs.list(root);
-  } catch {
-    return [];
-  }
-  const found: string[] = [];
-  for (const entry of entries) {
-    if (entry.kind !== "dir" || entry.name.startsWith(".")) {
-      continue;
-    }
-    if (await fs.exists(`${root}/${entry.name}/${QUEST_WORKSPACE}`)) {
-      found.push(entry.name);
-    }
-  }
-
-  return found.sort();
-}
-
-/**
- * The fleet root: the nearest ancestor of the session's own directory holding
- * Quest workspaces.
- *
- * Walking up from the session is what keeps a machine path out of the mod --
- * the prototype carried the operator's checkout root as a constant. Five
- * levels is enough for a worktree, which sits three below the root.
- */
-export async function discoverRoot(
-  fs: FsLike,
-  startDir: string,
-  levels = 5,
-): Promise<{ root: string; repos: string[] } | null> {
-  let dir = parentOf(startDir);
-  for (let step = 0; step < levels; step += 1) {
-    const repos = await reposUnder(fs, dir);
-    if (repos.length > 0) {
-      return { root: dir, repos };
-    }
-    const next = parentOf(dir);
-    if (next === dir) {
-      break;
-    }
-    dir = next;
-  }
-
-  return null;
 }
 
 /**
@@ -724,7 +661,7 @@ function isStringMap(value: unknown): value is Record<string, string> {
  * Whether a value read back from the store is a state this build wrote.
  *
  * A stored state that does not pass reads as no state at all, and the check
- * then records a baseline rather than toasting a fleet's worth of changes it
+ * then records a baseline rather than toasting a session's worth of changes it
  * cannot be sure it has not already shown.
  */
 export function isAlertsState(value: unknown): value is AlertsState {

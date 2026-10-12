@@ -1,5 +1,4 @@
 import { expect, mock, test } from "claude-code/testing";
-import type { FsEntry, On } from "claude-code";
 
 import { actorArgs, commentArg } from "../hooks/quest";
 
@@ -53,16 +52,6 @@ const viewOf = (status: string) =>
     },
   });
 
-const FLEET: FsEntry[] = [
-  { name: "opum-cli", kind: "dir", size: 0, mtimeMs: 0, isLink: false },
-  { name: "opum-doc", kind: "dir", size: 0, mtimeMs: 0, isLink: false },
-];
-
-function mockFleet(on: On) {
-  on("fs.list", async () => ({ value: FLEET }));
-  on("fs.exists", async () => ({ value: true }));
-}
-
 test("commentArg and actorArgs match what quest takes", async () => {
   expect(actorArgs("jdnewhouse")).toEqual([
     "--actor",
@@ -85,7 +74,6 @@ test("commentArg and actorArgs match what quest takes", async () => {
 test("edits in this repo call quest with the actor and the revision guard", async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 14, 30) });
   mock.store(on);
-  mockFleet(on);
   on("session.root", async () => ({ value: "/tmp/opum-cli" }));
   const calls: string[][] = [];
   on("process.run", async (_$, e) => {
@@ -115,7 +103,7 @@ test("edits in this repo call quest with the actor and the revision guard", asyn
       props: PANE,
     });
     await ui.press({ key: "tab-list" });
-    await ui.press({ key: "local" });
+    await ui.press({ key: "refresh" });
     await ui.press({ key: "row:opum-cli:OCLI-8" });
     expect(
       await ui.find({
@@ -158,42 +146,10 @@ test("edits in this repo call quest with the actor and the revision guard", asyn
   }
 });
 
-test("a task from another repo is read-only", async ($, on) => {
-  mock.clock(on, { now: Date.UTC(2026, 9, 2, 14, 30) });
-  mock.store(on);
-  mockFleet(on);
-  on("session.root", async () => ({ value: "/tmp/opum-doc" }));
-  on("process.run", async (_$, e) => {
-    if (e.argv[0] === "git" && e.argv.includes("--git-common-dir"))
-      return ok("/tmp/opum-doc/.git\n");
-    if (e.argv[0] === "git") return ok("");
-    if (e.argv.includes("view")) return ok(viewOf("In Progress"));
-    const repo = (e.init?.cwd ?? "").split("/").pop();
-    return ok(
-      repo === "opum-cli"
-        ? list("In Progress")
-        : JSON.stringify({ kind: "task.list", data: [] }),
-    );
-  });
-  const ui = await $.ui.mount({
-    plugin: "opum-quest",
-    surface: "terminal",
-    component: "Pane",
-    requestId: "quest-board",
-    props: PANE,
-  });
-  await ui.press({ key: "tab-list" });
-  await ui.press({ key: "fleet" });
-  await ui.press({ key: "row:opum-cli:OCLI-8" });
-  expect(
-    await ui.find({
-      type: "Text",
-      text: /Read-only here. opum-cli is edited from its own session./,
-    }),
-  ).toBeDefined();
-  expect(await ui.find({ key: "pause" })).toBeUndefined();
-  expect(await ui.find({ key: "comment" })).toBeUndefined();
-});
+// QCLI-490: the "a task from another repo is read-only" case went with fleet
+// mode. The board reads this session's own repository only, so every row it
+// draws is one this pane may write -- there is no other repo to be read-only
+// about. The guard itself stays in register.tsx, defensive and unreachable now.
 
 test(
   "the actor option decides what a write is recorded as",
@@ -201,7 +157,6 @@ test(
   async ($, on) => {
     mock.clock(on, { now: Date.UTC(2026, 9, 2, 14, 30) });
     mock.store(on);
-    mockFleet(on);
     on("session.root", async () => ({ value: "/tmp/opum-cli" }));
     const calls: string[][] = [];
     on("process.run", async (_$, e) => {
@@ -220,7 +175,7 @@ test(
       props: PANE,
     });
     await ui.press({ key: "tab-list" });
-    await ui.press({ key: "local" });
+    await ui.press({ key: "refresh" });
     await ui.press({ key: "row:opum-cli:OCLI-8" });
     await ui.press({ key: "pause" });
     expect(calls).toContainEqual([
@@ -248,7 +203,6 @@ test(
 test("an unlanded record is drawn as the id-collision window it is", async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 14, 30) });
   mock.store(on);
-  mockFleet(on);
   on("session.root", async () => ({ value: "/tmp/opum-cli" }));
   on("process.run", async (_$, e) => {
     if (e.argv[0] === "git" && e.argv.includes("--git-common-dir"))
