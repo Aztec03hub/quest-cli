@@ -11,6 +11,7 @@ import {
 } from "../../domain/records.ts";
 import type { PlanningRepository } from "../../ports/planning.ts";
 import {
+  compareTaskIds,
   defaultLifecyclePolicy,
   isOffFlowStatus,
   isRetiredPausedStatus,
@@ -208,7 +209,7 @@ function vocabularyIssues(
   vocabulary: TaskVocabulary,
 ): PlanningDoctorReport["issues"] {
   const issues: PlanningDoctorReport["issues"][number][] = [];
-  for (const task of [...tasks].sort((a, b) => a.id.localeCompare(b.id)))
+  for (const task of [...tasks].sort((a, b) => compareTaskIds(a.id, b.id)))
     for (const drift of vocabularyDrift(task, vocabulary)) {
       const allowed =
         (drift.field === "type" ? vocabulary.types : vocabulary.priorities) ??
@@ -248,7 +249,7 @@ function resolutionIssues(
     tasks.flatMap((task) => [task.id, ...task.aliases].map(aliasKey)),
   );
   const issues: PlanningDoctorReport["issues"][number][] = [];
-  for (const task of [...tasks].sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const task of [...tasks].sort((a, b) => compareTaskIds(a.id, b.id))) {
     const problem = resolutionProblem(task, lifecycle);
     if (problem !== undefined) {
       issues.push({
@@ -536,15 +537,13 @@ export class PlanningService {
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([status, taskIds]) => ({
           status,
-          taskIds: taskIds.sort((left, right) => left.localeCompare(right)),
+          taskIds: taskIds.sort(compareTaskIds),
         })),
       milestones: [...planning.milestones].sort(byIdentifier).map((item) => ({
         id: item.id,
         title: item.title,
         status: item.status,
-        taskIds: [...item.taskIds].sort((left, right) =>
-          left.localeCompare(right),
-        ),
+        taskIds: [...item.taskIds].sort(compareTaskIds),
       })),
     };
   }
@@ -641,7 +640,7 @@ export class PlanningService {
       .sort(
         (left, right) =>
           left.milestoneId.localeCompare(right.milestoneId) ||
-          left.taskId.localeCompare(right.taskId),
+          compareTaskIds(left.taskId, right.taskId),
       );
     // QCLI-302: only ACTIVE records are checked, because the repair the hint
     // names (`task start`) reaches active records alone. A retained record
@@ -673,7 +672,7 @@ export class PlanningService {
               : "") +
             `; no transition command can leave it.`,
       }))
-      .sort((left, right) => left.taskId.localeCompare(right.taskId));
+      .sort((left, right) => compareTaskIds(left.taskId, right.taskId));
     const issues = [
       ...milestoneIssues,
       ...offFlowIssues,

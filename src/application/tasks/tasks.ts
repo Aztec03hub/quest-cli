@@ -3,6 +3,7 @@ import {
   canonicalizeTaskLinks,
   closeMilestoneReference,
   closeTask,
+  compareTaskIds,
   createDraft,
   createTask,
   createTaskLinkSession,
@@ -25,6 +26,7 @@ import {
   type TaskResolutionKind,
   type TaskState,
   type TaskStatus,
+  taskIdSortKey,
   taskResolutionKinds,
   taskState,
   transitionTask,
@@ -326,7 +328,7 @@ function fold(value: string | undefined): string {
 function taskListSortValue(task: TaskState, field: string): string | number {
   switch (field) {
     case "id":
-      return task.id;
+      return taskIdSortKey(task.id);
     case "title":
       return task.title;
     case "status":
@@ -367,7 +369,7 @@ function sortTasksBy(
     if (left < right) return -1 * direction;
     if (left > right) return 1 * direction;
     // Ties always break by ascending id, independent of sort direction.
-    return a.id.localeCompare(b.id);
+    return compareTaskIds(a.id, b.id);
   });
 }
 
@@ -564,7 +566,7 @@ export class TaskService {
   }
   async list(): Promise<readonly TaskState[]> {
     return [...(await this.repository.readAll()).tasks].sort((a, b) =>
-      a.id.localeCompare(b.id),
+      compareTaskIds(a.id, b.id),
     );
   }
   /**
@@ -623,7 +625,7 @@ export class TaskService {
     );
     const listed = located
       .map((record) => record.task)
-      .sort((a, b) => a.id.localeCompare(b.id));
+      .sort((a, b) => compareTaskIds(a.id, b.id));
     // Readiness is evaluated over the whole collection before any filter: a
     // dependency excluded by --label must still count against its dependent.
     // QCLI-249: graph resolution needs the FULL closure, archive/tasks
@@ -696,7 +698,7 @@ export class TaskService {
     const snapshot = await this.repository.readAll();
     return this.taskRecords(snapshot)
       .map((record) => record.task)
-      .sort((a, b) => a.id.localeCompare(b.id));
+      .sort((a, b) => compareTaskIds(a.id, b.id));
   }
   /** QCLI-330: the configured type/priority sets doctor and the manifest report. */
   get vocabulary(): TaskVocabulary {
