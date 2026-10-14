@@ -17,8 +17,9 @@ export interface QuestionTransaction<T> {
  * Id allocation and the read-modify-write are made atomic by the store's own
  * inter-process lock (see `transact`), the same mechanism the task store uses,
  * so a concurrent ask cannot mint a duplicate id and a concurrent answer or
- * withdraw cannot lose a write -- the loser reports a conflict rather than
- * overwriting.
+ * withdraw cannot lose a write -- the loser never overwrites: it reports
+ * `question_not_open` (exit 6) when the record already moved, or a store
+ * conflict (exit 5) when the lock wait expires.
  */
 export interface QuestionRepository {
   /** Every stored question, in ascending id order. */

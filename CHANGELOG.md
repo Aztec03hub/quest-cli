@@ -23,8 +23,9 @@ dated by its own tag. No date here is inferred (QCLI-398).
   name a human actor (the CLI half of the design's forgery guard; the pane UI
   and its `tool.call` guard are QCLI-446). Allocation and the read-modify-write
   share the task store's inter-process lock, so a concurrent ask cannot mint a
-  duplicate id and a concurrent answer or withdraw cannot lose a write -- both
-  report a conflict on exit 5 instead.
+  duplicate id and a concurrent answer or withdraw cannot lose a write -- the
+  loser never overwrites: it reports `question_not_open` (exit 6) when the
+  record already moved, or a store conflict (exit 5) when the lock wait expires.
 
 - **`task list --across-refs` reports a genuine id collision distinctly from a
   status conflict, as a per-entry `identity` field** (QCLI-432; the shape is

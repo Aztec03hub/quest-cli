@@ -37,9 +37,11 @@ function sequence(id: string): number {
  * `transact` holds the store's inter-process lock across the read and the
  * write, the same mkdir-based lock the task store uses
  * (`local-task-repository.ts`). That lock is what makes allocation and the
- * read-modify-write safe: two concurrent asks cannot both mint `Q-N`, and a
- * concurrent answer or withdraw cannot lose a write -- the loser reports a
- * conflict rather than overwriting.
+ * read-modify-write safe: two concurrent asks cannot both mint `Q-N` (the
+ * loser gets a store conflict, exit 5), and a concurrent answer or withdraw
+ * cannot lose a write -- the loser never overwrites: it reports
+ * `question_not_open` (exit 6) when the record already moved, or a store
+ * conflict (exit 5) when the lock wait expires.
  */
 export class LocalQuestionRepository implements QuestionRepository {
   constructor(private readonly root: string) {}

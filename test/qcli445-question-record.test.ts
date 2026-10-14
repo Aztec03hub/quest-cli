@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { access, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -404,6 +404,73 @@ test("ask honours an explicit --id and refuses a duplicate (QCLI-445)", async ()
     expect(duplicate.exitCode).toBe(6);
     expect(JSON.parse(duplicate.stderr).error_type).toBe("validation");
   });
+});
+
+test("a refused answer releases the store lock, so the next write proceeds (QCLI-445)", async () => {
+  // The lock is taken and released around every write, including a write that
+  // is REFUSED (record already moved). If a refusal left the lock behind, the
+  // store would be stuck at conflict for every later write.
+  const store = await mkdtemp(join(tmpdir(), "quest-q445-lock-"));
+  const previous = process.env.QUEST_TASK_STORE;
+  process.env.QUEST_TASK_STORE = store;
+  try {
+    const run = (argv: readonly string[]) => runQuest(argv, false);
+    await ask(run);
+    expect(
+      (
+        await run([
+          "question",
+          "answer",
+          "Q-1",
+          "--choice",
+          "A",
+          ...OPERATOR,
+          "--json",
+        ])
+      ).exitCode,
+    ).toBe(0);
+    const refused = await run([
+      "question",
+      "answer",
+      "Q-1",
+      "--choice",
+      "B",
+      ...OPERATOR,
+      "--json",
+    ]);
+    expect(refused.exitCode).toBe(6);
+    expect(JSON.parse(refused.stderr).message).toBe("question_not_open");
+
+    // The lock directory is gone...
+    await expect(
+      access(join(store, ".quest", "questions", ".write.lock")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    // ...and the next write succeeds, proving the store is not stuck.
+    const next = await ask(run);
+    expect(next.exitCode).toBe(0);
+    expect(JSON.parse(next.stdout).data.id).toBe("Q-2");
+  } finally {
+    if (previous === undefined) delete process.env.QUEST_TASK_STORE;
+    else process.env.QUEST_TASK_STORE = previous;
+    await rm(store, { recursive: true, force: true });
+  }
+});
+
+test("question records are newline-terminated like every other record (QCLI-445)", async () => {
+  const store = await mkdtemp(join(tmpdir(), "quest-q445-newline-"));
+  const previous = process.env.QUEST_TASK_STORE;
+  process.env.QUEST_TASK_STORE = store;
+  try {
+    await ask((argv) => runQuest(argv, false));
+    const bytes = await readFile(
+      join(store, ".quest", "questions", "Q-1.json"),
+    );
+    expect(bytes.toString().endsWith("\n")).toBe(true);
+  } finally {
+    if (previous === undefined) delete process.env.QUEST_TASK_STORE;
+    else process.env.QUEST_TASK_STORE = previous;
+    await rm(store, { recursive: true, force: true });
+  }
 });
 
 test("concurrent asks for one allocated id: exactly one wins, the other conflicts (QCLI-445)", async () => {

@@ -29,7 +29,10 @@ const QUESTION_STATUSES: readonly QuestionStatus[] = [
  * The writes run inside `repository.transact`, so the read and the write are
  * one critical section under the store lock: a concurrent ask cannot mint a
  * duplicate id, and a concurrent answer or withdraw cannot lose a write. The
- * loser of either race reports a conflict (exit 5), never an overwrite.
+ * loser never overwrites: a concurrent ask reports a store conflict (exit 5),
+ * and a concurrent answer or withdraw reports `question_not_open` (exit 6)
+ * when the record already moved, or a store conflict (exit 5) when the lock
+ * wait expires.
  */
 export class QuestionService {
   constructor(private readonly repository: QuestionRepository) {}
