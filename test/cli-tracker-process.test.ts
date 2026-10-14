@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { realpathSync, writeFileSync } from "node:fs";
 import {
   chmod,
@@ -790,7 +790,97 @@ test("public lifecycle, draft, and planning routes preserve their declared envel
   }
 });
 
-async function invokeEveryManifestPayloadCommand(mode: "--plain" | "--json") {
+/**
+ * QCLI-501: the sweep is split by COMMAND GROUP so one test no longer bounds
+ * the whole manifest. Its 15s bound is a hang detector, was already marginal on
+ * clean dev alone (14.73s measured on a contended machine, 2026-10-14), and
+ * must never be raised. Each mode's fixtures are built ONCE (memoized below)
+ * and every group test invokes only its own commands against that shared store,
+ * so a test's cost scales with a group rather than the manifest.
+ */
+interface SweepGroup {
+  readonly label: string;
+  readonly matches: (name: string) => boolean;
+}
+const SWEEP_GROUPS: readonly SweepGroup[] = [
+  {
+    label: "registry and instructions",
+    matches: (name) =>
+      [
+        "manifest",
+        "version",
+        "help",
+        "instructions",
+        "instructions --list",
+        "instructions <guide>",
+        "agents",
+        "completion",
+      ].includes(name),
+  },
+  {
+    label: "workspace init",
+    matches: (name) => name === "init" || name === "init --reconfigure",
+  },
+  {
+    label: "migration backlog",
+    matches: (name) => name.startsWith("migration "),
+  },
+  { label: "task", matches: (name) => name.startsWith("task ") },
+  { label: "draft", matches: (name) => name.startsWith("draft ") },
+  { label: "milestone", matches: (name) => name.startsWith("milestone ") },
+  { label: "decision", matches: (name) => name.startsWith("decision ") },
+  { label: "question", matches: (name) => name.startsWith("question ") },
+  {
+    label: "search",
+    matches: (name) => name === "search" || name === "search --all",
+  },
+  {
+    label: "project and diagnostics",
+    matches: (name) =>
+      [
+        "overview",
+        "board",
+        "board export",
+        "doctor",
+        "check",
+        "cleanup",
+        "browser",
+      ].includes(name),
+  },
+];
+
+interface SweepEntry {
+  readonly name: string;
+  readonly kind: string | null;
+}
+interface SweepHarness {
+  readonly manifest: readonly SweepEntry[];
+  /** Run one command against the shared store; throws on a non-zero exit. */
+  invoke(entry: SweepEntry): Promise<string>;
+}
+
+/** One harness per mode, built lazily and reused by that mode's group tests. */
+const sweepHarnesses = new Map<string, Promise<SweepHarness>>();
+function sweepHarness(mode: "--plain" | "--json"): Promise<SweepHarness> {
+  let harness = sweepHarnesses.get(mode);
+  if (harness === undefined) {
+    harness = buildSweepHarness(mode);
+    sweepHarnesses.set(mode, harness);
+  }
+  return harness;
+}
+
+/** Temp trees a harness owns; each is removed once, at the end of the file. */
+const sweepCleanups: string[] = [];
+afterAll(async () => {
+  for (const path of sweepCleanups.splice(0)) {
+    await rm(path, { recursive: true, force: true });
+  }
+});
+
+async function buildSweepHarness(
+  mode: "--plain" | "--json",
+): Promise<SweepHarness> {
   const store = await mkdtemp(join(tmpdir(), "quest-human-output-"));
   // A directory of its own: `init`/`init --reconfigure` need a worktree
   // whose Quest content state they actually control, and `store` already
@@ -1266,8 +1356,7 @@ async function invokeEveryManifestPayloadCommand(mode: "--plain" | "--json") {
       browser: ["browser", "--plain"],
     };
 
-    const outputs = new Map<string, string>();
-    for (const entry of manifest) {
+    const invoke = async (entry: SweepEntry): Promise<string> => {
       const recipe = invocations[entry.name];
       expect(
         recipe,
@@ -1306,58 +1395,72 @@ async function invokeEveryManifestPayloadCommand(mode: "--plain" | "--json") {
         ? (JSON.parse(result.stderr) as { readonly error_type?: string })
         : undefined;
       expect(diagnostic?.error_type, entry.name).not.toBe("usage");
-      outputs.set(entry.name, result.stdout);
-    }
-    return { manifest, outputs };
+      return result.stdout;
+    };
+    return { manifest, invoke };
   } finally {
-    await rm(store, { recursive: true, force: true });
-    await rm(freshWorkspace, { recursive: true, force: true });
-    await rm(backlogSource, { recursive: true, force: true });
+    // QCLI-501: the store OUTLIVES this call -- the group tests invoke against
+    // it -- so the trees are registered for removal in afterAll, not here.
+    sweepCleanups.push(store, freshWorkspace, backlogSource);
   }
 }
 
-test("every manifest payload command renders more than its kind in plain mode", async () => {
-  const { manifest, outputs } =
-    await invokeEveryManifestPayloadCommand("--plain");
-  for (const entry of manifest.filter(
-    (command): command is { readonly name: string; readonly kind: string } =>
-      command.kind !== null,
-  )) {
-    const stdout = outputs.get(entry.name);
-    expect(stdout, entry.name).toBeDefined();
-    expect(stdout, entry.name).not.toBe(`${entry.kind}\n`);
-    expect(stdout?.trim(), entry.name).not.toBe("");
-    // QCLI-273: the plain renderer must never leak an UNSET optional field as
-    // the literal word `undefined` -- QCLI-272's divergence, where --json
-    // (JSON.stringify drops an undefined-valued property) was right and
-    // --plain (Object.entries keeps it) printed `undefined`. This harness
-    // already runs EVERY manifest payload command in --plain and --json, so
-    // this one assertion closes the class structurally for all of them, which
-    // is why the per-test pairing helper this task weighed was declined (see
-    // the task record).
-    expect(stdout ?? "", entry.name).not.toContain("undefined");
+// QCLI-501: one test per (mode, command group) rather than two tests over the
+// whole manifest, so no single test approaches the 15s bound as the manifest
+// grows. Each group invokes only its own commands against the shared, memoized
+// store; the assertions are exactly the two the monolithic tests made.
+for (const mode of ["--plain", "--json"] as const) {
+  for (const group of SWEEP_GROUPS) {
+    test(`every manifest payload command in the ${group.label} group draws more than its kind (${mode})`, async () => {
+      const harness = await sweepHarness(mode);
+      const entries = harness.manifest.filter((entry) =>
+        group.matches(entry.name),
+      );
+      const outputs = new Map<string, string>();
+      for (const entry of entries)
+        outputs.set(entry.name, await harness.invoke(entry));
+      for (const entry of entries.filter(
+        (
+          command,
+        ): command is { readonly name: string; readonly kind: string } =>
+          command.kind !== null,
+      )) {
+        const stdout = outputs.get(entry.name);
+        expect(stdout, entry.name).toBeDefined();
+        if (mode === "--plain") {
+          expect(stdout, entry.name).not.toBe(`${entry.kind}\n`);
+          expect(stdout?.trim(), entry.name).not.toBe("");
+          // QCLI-273: the plain renderer must never leak an UNSET optional
+          // field as the literal word `undefined` -- QCLI-272's divergence,
+          // where --json (JSON.stringify drops an undefined-valued property)
+          // was right and --plain (Object.entries keeps it) printed
+          // `undefined`. The sweep runs EVERY manifest payload command, so this
+          // one assertion closes the class structurally for all of them.
+          expect(stdout ?? "", entry.name).not.toContain("undefined");
+        } else {
+          const envelope = JSON.parse(stdout ?? "") as Record<string, unknown>;
+          if (entry.name === "task binding") {
+            // The public opum-agent-workflow/v1 envelope is its own closed shape.
+            expect(envelope.contract, entry.name).toBe("opum-agent-workflow");
+            continue;
+          }
+          expect(envelope.principal, entry.name).toBeNull();
+          expect(Object.keys(envelope).at(-1), entry.name).toBe("principal");
+        }
+      }
+    }, 15_000);
   }
-}, 15_000);
+}
 
-test("every manifest payload command declares principal null as its last JSON key", async () => {
-  const { manifest, outputs } =
-    await invokeEveryManifestPayloadCommand("--json");
-  for (const entry of manifest.filter(
-    (command): command is { readonly name: string; readonly kind: string } =>
-      command.kind !== null,
-  )) {
-    const stdout = outputs.get(entry.name);
-    expect(stdout, entry.name).toBeDefined();
-    const envelope = JSON.parse(stdout ?? "") as Record<string, unknown>;
-    if (entry.name === "task binding") {
-      // The public opum-agent-workflow/v1 envelope is its own closed shape.
-      expect(envelope.contract, entry.name).toBe("opum-agent-workflow");
-      continue;
-    }
-    expect(envelope.principal, entry.name).toBeNull();
-    expect(Object.keys(envelope).at(-1), entry.name).toBe("principal");
+test("the sweep groups partition the manifest so no command is silently unswept (QCLI-501)", async () => {
+  const harness = await sweepHarness("--plain");
+  for (const entry of harness.manifest) {
+    const matched = SWEEP_GROUPS.filter((group) =>
+      group.matches(entry.name),
+    ).map((group) => group.label);
+    expect(matched, entry.name).toHaveLength(1);
   }
-}, 15_000);
+});
 
 test("task edit can mutate title, priority, type and ordinal (QCLI-133)", async () => {
   const store = await mkdtemp(join(tmpdir(), "quest-edit-fields-"));
