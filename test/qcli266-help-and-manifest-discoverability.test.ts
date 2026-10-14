@@ -9,6 +9,7 @@ import {
   REPEATABLE_CREATE_FLAGS,
   REPEATABLE_EDIT_FLAGS,
 } from "../src/application/command-parameters.ts";
+import { runCommand } from "./helpers/spawn.ts";
 
 /**
  * QCLI-266. A session reading only `quest help <command>` and
@@ -28,16 +29,9 @@ const MAIN = new URL("../src/cli/main.ts", import.meta.url).pathname;
 const HELP_WINDOW = 20;
 
 function quest(workspace: string, args: readonly string[]) {
-  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
+  return runCommand([process.execPath, MAIN, ...args], {
     cwd: workspace,
-    stdout: "pipe",
-    stderr: "pipe",
   });
-  return {
-    exitCode: child.exitCode ?? 0,
-    stdout: child.stdout ? child.stdout.toString() : "",
-    stderr: child.stderr ? child.stderr.toString() : "",
-  };
 }
 
 async function workspace() {

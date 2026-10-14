@@ -19,6 +19,7 @@ import {
   createTask,
   createTaskLinkSession,
 } from "../src/domain/tasks/tasks.ts";
+import { runCommand } from "./helpers/spawn.ts";
 
 /**
  * QCLI-122 third-pass red contracts (FMC ea6e837a). Each test pins one
@@ -45,17 +46,10 @@ async function seed(root: string, id: string, title: string, deps?: string[]) {
 }
 
 function spawnJson(workspace: string, args: readonly string[], stdin?: string) {
-  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
+  return runCommand([process.execPath, MAIN, ...args], {
     cwd: workspace,
     stdin: stdin === undefined ? "ignore" : "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
   });
-  return {
-    exitCode: child.exitCode ?? 0,
-    stdout: child.stdout ? child.stdout.toString() : "",
-    stderr: child.stderr ? child.stderr.toString() : "",
-  };
 }
 
 test("red: injected read failure after lock acquisition must not leak the lock", async () => {

@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runCommand } from "./helpers/spawn.ts";
 
 /**
  * QCLI-339. `overview` counted `taskSnapshot.tasks`, which
@@ -30,16 +31,9 @@ const MAIN = new URL("../src/cli/main.ts", import.meta.url).pathname;
 const ACTOR = ["--actor", "person-1", "--actor-kind", "human"] as const;
 
 function quest(workspace: string, args: readonly string[]) {
-  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
+  return runCommand([process.execPath, MAIN, ...args], {
     cwd: workspace,
-    stdout: "pipe",
-    stderr: "pipe",
   });
-  return {
-    exitCode: child.exitCode ?? 0,
-    stdout: child.stdout ? child.stdout.toString() : "",
-    stderr: child.stderr ? child.stderr.toString() : "",
-  };
 }
 
 async function workspace() {

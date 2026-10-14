@@ -27,6 +27,7 @@ import type {
   OriginRemote,
   RefDiscoveryPort,
 } from "../src/ports/ref-discovery.ts";
+import { runCommand } from "./helpers/spawn.ts";
 
 /**
  * QCLI-417 / DEC-40 (operator-accepted 2026-09-29, ODOC-330): the read-only,
@@ -62,19 +63,12 @@ interface Run {
 }
 
 function run(cwd: string, argv: readonly string[]): Run {
-  const child = Bun.spawnSync([...argv], {
+  return runCommand([...argv], {
     cwd,
-    stdout: "pipe",
-    stderr: "pipe",
     // The suite's own harness runs with plugins off; doing it here keeps the
     // fixture's stderr deterministic when a single file is run directly.
     env: { ...process.env, QUEST_AGENT_PLUGINS: "off" },
   });
-  return {
-    exitCode: child.exitCode ?? 0,
-    stdout: child.stdout ? child.stdout.toString() : "",
-    stderr: child.stderr ? child.stderr.toString() : "",
-  };
 }
 
 function git(cwd: string, ...args: readonly string[]): string {
