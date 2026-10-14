@@ -12,6 +12,20 @@ dated by its own tag. No date here is inferred (QCLI-398).
 
 ### Added
 
+- **A `question` record and the `quest question` command group** (QCLI-445;
+  opum-doc seq 179(a), DEC-190): the record by which a session asks the operator
+  something that blocks work without blocking the asking session -- the operator
+  answers it in the Quest pane. `quest question ask` files one (2 to 4 options,
+  with `--recommend` REQUIRED and naming one of them), `answer` records the
+  operator's choice or their own words with a `via` field saying how it arrived,
+  `withdraw` retires one, and `list`/`view` read them. Records live one per file
+  at `.quest/questions/Q-N.json`, id allocation is refs-aware, and `answer` must
+  name a human actor (the CLI half of the design's forgery guard; the pane UI
+  and its `tool.call` guard are QCLI-446). Allocation and the read-modify-write
+  share the task store's inter-process lock, so a concurrent ask cannot mint a
+  duplicate id and a concurrent answer or withdraw cannot lose a write -- both
+  report a conflict on exit 5 instead.
+
 - **`task list --across-refs` reports a genuine id collision distinctly from a
   status conflict, as a per-entry `identity` field** (QCLI-432; the shape is
   final, opum-doc 565 / DEC-172 (4u)). The field is `task` when every state of

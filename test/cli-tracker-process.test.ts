@@ -890,6 +890,45 @@ async function invokeEveryManifestPayloadCommand(mode: "--plain" | "--json") {
         ])
       ).stdout,
     ).data.id as string;
+    // QCLI-445: two open questions, one to answer and one to withdraw, since
+    // answering and withdrawing are the record's two mutually-exclusive
+    // terminal states and a single question cannot exercise both.
+    const questionToAnswer = JSON.parse(
+      (
+        await quest(store, [
+          "question",
+          "ask",
+          "--title",
+          "Existing question",
+          "--option",
+          "A=Yes:y",
+          "--option",
+          "B=No:n",
+          "--recommend",
+          "A",
+          ...actor,
+          "--json",
+        ])
+      ).stdout,
+    ).data.id as string;
+    const questionToWithdraw = JSON.parse(
+      (
+        await quest(store, [
+          "question",
+          "ask",
+          "--title",
+          "Withdrawable question",
+          "--option",
+          "A=Yes:y",
+          "--option",
+          "B=No:n",
+          "--recommend",
+          "A",
+          ...actor,
+          "--json",
+        ])
+      ).stdout,
+    ).data.id as string;
     const bound = JSON.parse(
       (await quest(store, ["task", "create", "Bound", ...actor, "--json"]))
         .stdout,
@@ -1173,6 +1212,42 @@ async function invokeEveryManifestPayloadCommand(mode: "--plain" | "--json") {
         ...actor,
         "--plain",
       ],
+      // QCLI-445: manifest order runs ask before answer/withdraw, so `ask`
+      // creates a fresh question and the other two target the fixtures above.
+      "question ask": [
+        "question",
+        "ask",
+        "--title",
+        "Plain question",
+        "--option",
+        "A=Yes:y",
+        "--option",
+        "B=No:n",
+        "--recommend",
+        "A",
+        ...actor,
+        "--plain",
+      ],
+      "question answer": [
+        "question",
+        "answer",
+        questionToAnswer,
+        "--choice",
+        "A",
+        ...actor,
+        "--plain",
+      ],
+      "question withdraw": [
+        "question",
+        "withdraw",
+        questionToWithdraw,
+        "--reason",
+        "no longer needed",
+        ...actor,
+        "--plain",
+      ],
+      "question list": ["question", "list", "--plain"],
+      "question view": ["question", "view", questionToAnswer, "--plain"],
       overview: ["overview", "--plain"],
       board: ["board", "--plain"],
       "board export": [
@@ -2267,7 +2342,11 @@ test("every key a task read emits is manifest-declared, and every declared field
 
     const manifest = JSON.parse(
       (await quest(store, ["manifest", "--json"])).stdout,
-    ).data.commands as { name: string; fields?: string[] }[];
+    ).data.commands as {
+      name: string;
+      fields?: string[];
+      mutates?: boolean;
+    }[];
     const viewed = JSON.parse(
       (await quest(store, ["task", "view", created.id, "--json"])).stdout,
     ).data;
@@ -2343,6 +2422,33 @@ test("every key a task read emits is manifest-declared, and every declared field
       (await quest(store, ["search", "Fully", "--json"])).stdout,
     ).data.find((task: { id: string }) => task.id === created.id);
 
+    // QCLI-445 review: a question view/list payload, so the complete-fields
+    // check below covers the question family as well as the task reads.
+    const askedQuestion = JSON.parse(
+      (
+        await quest(store, [
+          "question",
+          "ask",
+          "--title",
+          "Ship 0.14.0?",
+          "--option",
+          "A=Yes:ship",
+          "--option",
+          "B=No:wait",
+          "--recommend",
+          "A",
+          ...human,
+        ])
+      ).stdout,
+    ).data as { id: string };
+    const questionViewed = JSON.parse(
+      (await quest(store, ["question", "view", askedQuestion.id, "--json"]))
+        .stdout,
+    ).data;
+    const questionListed = JSON.parse(
+      (await quest(store, ["question", "list", "--json"])).stdout,
+    ).data[0];
+
     // Only the read surfaces. `task create` and `task edit` also carry a
     // `fields` list, but theirs is the settable-input vocabulary — it holds
     // `addLabels` and `clearParent` and omits `id` and `status` — so an
@@ -2355,22 +2461,56 @@ test("every key a task read emits is manifest-declared, and every declared field
     // key present, with exceptions carved out for the conditional ones), which
     // a curated subset satisfies while the record carries more: that is how
     // the manifest came to under-declare both records.
-    for (const [name, payload] of [
+    // QCLI-461: records that carry the CONDITIONAL keys the rich task does not
+    // -- so dropping `unresolvedAtCompletion` or `resolution` from a declared
+    // set is caught here rather than passing unnoticed.
+    const payloads: readonly (readonly [string, object])[] = [
       ["task view", viewed],
-      ["task list", listed],
-      ["search", searched],
-      // QCLI-461: records that carry the CONDITIONAL keys the rich task does
-      // not -- so dropping `unresolvedAtCompletion` or `resolution` from a
-      // declared set is caught here rather than passing unnoticed.
+      ["task view", viewedWithMaxNotes],
       ["task view", unresolvedView],
       ["task view", closedView],
-    ] as const) {
+      ["task list", listed],
+      ["search", searched],
+      ["question view", questionViewed],
+      ["question list", questionListed],
+    ];
+    // QCLI-445 review: every non-mutating command that declares `fields` must
+    // be classified -- either checked above (a record read whose declared set is
+    // the COMPLETE key set) or named here as a CURATED SUBSET, to which the
+    // payload-subset rule does not apply. Deriving the population from the
+    // manifest, rather than from a fixed list, is what stops the next family
+    // (this one included) from slipping past the check unnoticed.
+    const CURATED_FIELDS_READS = new Set<string>([
+      "instructions",
+      "instructions --list",
+      "instructions <guide>",
+      "migration backlog preview",
+      "migration backlog status",
+      "task status-flow",
+      "task binding",
+      "task list --across-refs",
+      "draft view",
+      "milestone list",
+      "milestone view",
+      "decision list",
+      "decision view",
+      "board export",
+    ]);
+    const checkedNames = new Set(payloads.map(([name]) => name));
+    const unclassified = manifest
+      .filter((entry) => entry.mutates === false && entry.fields !== undefined)
+      .map((entry) => entry.name)
+      .filter(
+        (name) => !checkedNames.has(name) && !CURATED_FIELDS_READS.has(name),
+      );
+    expect({ unclassified }).toEqual({ unclassified: [] });
+    for (const [name, payload] of payloads) {
       const declared = manifest.find((entry) => entry.name === name)?.fields;
       expect({ name, declared: declared !== undefined }).toEqual({
         name,
         declared: true,
       });
-      const undeclared = Object.keys(payload as object).filter(
+      const undeclared = Object.keys(payload).filter(
         (field) => !(declared ?? []).includes(field),
       );
       expect({ name, undeclared }).toEqual({ name, undeclared: [] });

@@ -208,6 +208,10 @@ const REPEATABLE_BY_COMMAND: Readonly<Record<string, readonly string[]>> = {
   // ENTRY's own name, and a missing key would report `--ref <string>` -- a
   // caller reading that would pass one ref and silently read only one.
   "task list --across-refs": REPEATABLE_LIST_FLAGS,
+  // QCLI-445: `question ask` takes one `--option` per choice (the parser is
+  // handed this same list), so the manifest must report it repeatable rather
+  // than as a single scalar.
+  "question ask": ["--option"],
 };
 const BOOLEAN = new Set<string>(BOOLEAN_FLAGS);
 const JSON_ARRAY = new Set<string>(JSON_ARRAY_FLAGS);
