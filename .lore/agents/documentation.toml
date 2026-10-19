@@ -2,7 +2,7 @@ schema_version = 1
 name = "documentation"
 description = "Grounds documentation authoring in this bundle's entry point, the active Story and controlling Spec it fans out from, the operations runbook that governs safe workspace procedure, and the Lore-integration ADR that decides how docs may couple to lore."
 kind = "specialist"
-max_tokens = 12000
+max_tokens = 28330
 pinned = [
   "index",
 ]

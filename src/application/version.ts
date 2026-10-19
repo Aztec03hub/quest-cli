@@ -16,4 +16,4 @@ declare const __QUEST_BUILD_VERSION__: string;
 export const QUEST_VERSION: string =
   typeof __QUEST_BUILD_VERSION__ === "string"
     ? __QUEST_BUILD_VERSION__
-    : "0.13.0";
+    : "0.14.0";

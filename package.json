@@ -1,6 +1,6 @@
 {
   "name": "@opum-ai/quest",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Deterministic, LLM-free task tracker CLI — the record layer coding agents and humans write to.",
   "license": "MIT",
   "author": "Opum AI",
@@ -60,20 +60,20 @@
     "publish:release": "node scripts/publish-release.mjs"
   },
   "optionalDependencies": {
-    "@opum-ai/quest-darwin-arm64": "0.13.0",
-    "@opum-ai/quest-darwin-x64": "0.13.0",
-    "@opum-ai/quest-linux-arm64": "0.13.0",
-    "@opum-ai/quest-linux-x64": "0.13.0",
-    "@opum-ai/quest-win32-arm64": "0.13.0",
-    "@opum-ai/quest-win32-x64": "0.13.0"
+    "@opum-ai/quest-darwin-arm64": "0.14.0",
+    "@opum-ai/quest-darwin-x64": "0.14.0",
+    "@opum-ai/quest-linux-arm64": "0.14.0",
+    "@opum-ai/quest-linux-x64": "0.14.0",
+    "@opum-ai/quest-win32-arm64": "0.14.0",
+    "@opum-ai/quest-win32-x64": "0.14.0"
   },
   "questPlatformPackages": {
-    "@opum-ai/quest-darwin-arm64": "59d1c0dc66a499ce372f3af1d5ef01f8d8f9734a0d06539c97d91582ab8c1e60",
-    "@opum-ai/quest-darwin-x64": "7682e1345e781bd1a83a76970d36d3f5827a46abf6784d2f142d6317f0f44e69",
-    "@opum-ai/quest-linux-arm64": "89cdbeb5631b7a793f6dffe183a588623719863c69ad7d2a91b9fea9918ea76b",
-    "@opum-ai/quest-linux-x64": "1609c920eaaf24edb55d13ed593a92e668a1e54ae83d360a4e6b6d858c73e0fd",
-    "@opum-ai/quest-win32-arm64": "7e56502b7bbd33047602e722a0dc90e9f107f3ddf2deb00c10d24405163af9f2",
-    "@opum-ai/quest-win32-x64": "28954d2f8e684ae09faedb5ebdbcef584149edf57ef98cfd10fa08a46d84a3f7"
+    "@opum-ai/quest-darwin-arm64": "3ccf5114943867de2c9bbbaf3c75231cefbec99749a3986fb932f70121d8f26a",
+    "@opum-ai/quest-darwin-x64": "c6f83cba9dbf74a0b17cbfbd22bcfff7f61be0cfd975106e935904f6a81bdf62",
+    "@opum-ai/quest-linux-arm64": "bd58b6168d95aa31cfdf075bbf1b4ecf920fdae4b6360d3e0d707446be7abaa1",
+    "@opum-ai/quest-linux-x64": "d7315ef8749b65ce7efb96ab780946409e771b99712d40d884d7ea77708fcce7",
+    "@opum-ai/quest-win32-arm64": "53c43884b182e232973ef893e0bb889411d60f69d34c96bdd27c664d1270e4d0",
+    "@opum-ai/quest-win32-x64": "c2803070083cff4820797acb7f70b94ae2c9527bd093cb31b518db6af3823d02"
   },
   "dependencies": {
     "@clack/prompts": "^1.8.0",

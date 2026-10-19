@@ -2,7 +2,7 @@ schema_version = 1
 name = "implementation"
 description = "Grounds quest-cli implementation work in the current architecture, the governing Lore-integration ADR, component contracts, the operations runbook, and the active 0.2.x hardening Story."
 kind = "specialist"
-max_tokens = 12000
+max_tokens = 31451
 pinned = [
   "specs/quest-cli-architecture",
   "adr/keep-lore-optional-and-integrate-only-through-versioned-public-records",
