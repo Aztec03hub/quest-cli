@@ -65,6 +65,22 @@ dated by its own tag. No date here is inferred (QCLI-398).
 
 ### Fixed
 
+- **The release gate now proves the committed platform binary against this
+  source tree, not only against a checksum map generated from itself**
+  (QCLI-509; opum-doc DEC-204). `check-package-artifacts.mjs` hashed each
+  committed binary and compared it to a map regenerated from those same bytes,
+  so a binary stale relative to `src/` passed by construction -- 0.13.0 shipped
+  a darwin-arm64 binary with no `--fields` support at all (QCLI-438). The gate
+  now executes the host-platform binary -- the committed bytes on a tag ref,
+  which the release job runs as-is, and the freshly built one on a dispatched
+  run -- and requires
+  `task list --fields id` and `task view <id> --fields title` to exit 0 and
+  return the projected shape. It runs in the native `immutable-candidates` job
+  (or with `QUEST_RELEASE_BINARY_PROBE=1`), not in `source-gates`: the
+  strings-first bump state must stay green while the binaries are still the
+  previous bytes, or CI can never build the new ones. The probe is a capability
+  floor, so a release that adds a user-visible surface adds a probe for it.
+
 - **Task ids order by their number, so `T-2` comes before `T-10`.** Every place
   that ordered tasks by id compared the ids as plain strings, so a workspace
   with ten or more tasks listed `T-10` between `T-1` and `T-2`. That order
