@@ -10,6 +10,8 @@ dated by its own tag. No date here is inferred (QCLI-398).
 
 ## Unreleased
 
+## 0.14.0
+
 ### Added
 
 - **A `question` record and the `quest question` command group** (QCLI-445;
