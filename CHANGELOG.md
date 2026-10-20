@@ -10,6 +10,8 @@ each is dated by its own tag. No date here is inferred (QCLI-398).
 
 ## Unreleased
 
+## 0.14.1 - 2026-10-20
+
 ### Changed
 
 - **0.14.1 republishes 0.14.0's content, because 0.14.0 was tagged and never
