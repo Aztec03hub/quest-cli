@@ -50,6 +50,8 @@
 // Usage:
 //   node scripts/promote-release.mjs --record <path> --qualification-run <id>             # dry run
 //   node scripts/promote-release.mjs --record <path> --qualification-run <id> --promote   # move latest
+//   ... --notes-from <40-hex sha>   # QCLI-515: read the release notes from a descendant of the
+//                                   # tag's commit whose range is CHANGELOG.md plus .quest/ only (DEC-204 (3a)); used once, for 0.14.1
 //   node scripts/promote-release.mjs --rollback <path>                                    # restore it
 //
 // Auth is the publisher's: a stored granular token (Keychain, then
@@ -64,7 +66,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { ensureGitHubRelease, releaseNotesFor } from "./github-release.mjs";
+import {
+  ensureGitHubRelease,
+  notesCommitFrom,
+  releaseNotesFor,
+} from "./github-release.mjs";
 import {
   describeKeychainState,
   isPublished,
@@ -713,6 +719,19 @@ export async function verifyTags({
   return { ok: false, attempts, wrong };
 }
 
+/**
+ * What to tell the operator when the GitHub Release did not cut after `latest`
+ * moved. The repair tool reads the notes at the commit the tag peels to, so for
+ * a promotion that took its notes from --notes-from (QCLI-515) it would refuse
+ * for the same reason the tag has no section: name the hand-cut route instead
+ * of a command that cannot succeed.
+ */
+export function repairHint(version, notesFrom) {
+  if (notesFrom === undefined)
+    return `Repair with: node scripts/github-release.mjs --version ${version} --create`;
+  return `Do NOT use github-release.mjs --create: it reads the notes at the tag's commit, which has no "## ${version}" section (this promotion read them from ${notesFrom} by --notes-from). Cut the release by hand from the "## ${version}" section at ${notesFrom}: gh release create v${version} -R github.com/opum-ai/quest-cli --verify-tag --title "Quest CLI ${version}" --notes-file <the section body, without its ## heading> --latest`;
+}
+
 async function main(argv) {
   const flag = (name) => {
     const index = argv.indexOf(name);
@@ -726,6 +745,9 @@ async function main(argv) {
   const recordPath = flag("--record");
   const otp = flag("--otp");
   const qualificationRun = flag("--qualification-run");
+  const notesFrom = flag("--notes-from");
+  if (notesFrom !== undefined && rollbackPath !== undefined)
+    throw new Error("--notes-from applies to a promotion, not to --rollback");
   const act = argv.includes("--promote") || rollbackPath !== undefined;
   if (!rollbackPath && !recordPath)
     throw new Error(
@@ -886,7 +908,23 @@ async function main(argv) {
     // QCLI-407: read at the commit v<version> peels to -- the same commit the
     // bundle above was gated against -- so an uncommitted edit, or work that
     // landed after the tag, cannot become the body of this release.
-    const notes = await releaseNotesFor(version, { commit: peeled.commit });
+    // QCLI-515 (DEC-204 (3)): --notes-from moves ONLY this read, to a
+    // descendant of the tag's commit (CHANGELOG.md plus .quest/ only, DEC-204 (3a)). The bundle above, the
+    // receipt and the rc bytes stay bound to the tag peel. Used once, for 0.14.1,
+    // whose tag carries no `## 0.14.1` section.
+    let notesCommit = peeled.commit;
+    if (notesFrom !== undefined) {
+      const from = await notesCommitFrom(notesFrom, peeled.commit);
+      if (!from.ok) {
+        console.error(`Refusing to promote ${version}: ${from.detail}`);
+        process.exit(1);
+      }
+      notesCommit = from.commit;
+      console.log(
+        `Release notes are read from ${notesCommit.slice(0, 7)}, a descendant (CHANGELOG.md plus .quest/ only) of the tag commit ${peeled.commit.slice(0, 7)} (--notes-from); the bundle and receipt stay bound to ${peeled.commit.slice(0, 7)}.`,
+      );
+    }
+    const notes = await releaseNotesFor(version, { commit: notesCommit });
     if (!notes.ok) {
       console.error(`Refusing to promote ${version}: ${notes.detail}`);
       process.exit(1);
@@ -1062,7 +1100,7 @@ async function main(argv) {
   if (cut.ok) console.log(`GitHub Release: ${cut.detail}.`);
   else
     console.error(
-      `\nGitHub Release NOT cut: ${cut.detail}. npm ${PROMOTE_TAG} moved and is verified -- do NOT roll back for this. Repair with: node scripts/github-release.mjs --version ${record.version} --create`,
+      `\nGitHub Release NOT cut: ${cut.detail}. npm ${PROMOTE_TAG} moved and is verified -- do NOT roll back for this. ${repairHint(record.version, notesFrom)}`,
     );
 
   // QCLI-400: report only, AFTER the release cut so its retries cannot

@@ -148,3 +148,6 @@ export function verifyTags(options: {
   delayMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<{ ok: boolean; attempts: number; wrong: string[] }>;
+
+/** QCLI-515: what to tell the operator when the GitHub Release did not cut. */
+export function repairHint(version: string, notesFrom?: string): string;
