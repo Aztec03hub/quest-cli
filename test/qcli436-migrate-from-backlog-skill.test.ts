@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
+import { runCommand } from "./helpers/spawn.ts";
 
 /**
  * QCLI-436: the `migrate-from-backlog` skill walks the person through
@@ -56,17 +57,7 @@ created_date: '2026-01-01T00:00:00Z'
 }
 
 function quest(workspace: string, args: readonly string[]) {
-  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
-    cwd: workspace,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  return {
-    exitCode: child.exitCode ?? 0,
-    stdout: child.stdout ? child.stdout.toString() : "",
-    stderr: child.stderr ? child.stderr.toString() : "",
-  };
+  return runCommand([process.execPath, MAIN, ...args], { cwd: workspace });
 }
 
 /** Runs a command that must succeed, and returns its envelope. */

@@ -50,6 +50,7 @@ import {
 } from "../application/command-parameters.ts";
 import { BacklogMigrationRefusedError } from "../application/migration/backlog-public.ts";
 import type { PlanningService } from "../application/planning/planning.ts";
+import type { QuestionService } from "../application/questions/questions.ts";
 import type {
   AcrossRefsCoverage,
   AcrossRefsFilter,
@@ -94,6 +95,7 @@ import {
   createContinuityCheckService,
   createGitPort,
   createPlanningService,
+  createQuestionService,
   createTaskBindingModel,
   createTaskService,
   createWorkspacePort,
@@ -1426,6 +1428,56 @@ async function nextDraftId(
   return `D-${highest + 1}`;
 }
 
+/** QCLI-445: a question record is one file per id (`.quest/questions/Q-N.json`),
+ * storage-identical to a draft, so id allocation reuses the same refs-aware
+ * filename scan against this family's own directory. */
+const QUESTION_RECORD_SUBDIRECTORIES = ["questions"];
+
+async function nextQuestionId(
+  questions: QuestionService,
+  git: ReturnType<typeof createGitPort>,
+  root: string,
+): Promise<string> {
+  const marker = "Q-";
+  const localHighest = (await questions.list()).reduce((maximum, record) => {
+    if (!record.id.startsWith(marker)) return maximum;
+    const numeric = Number(record.id.slice(marker.length));
+    return Number.isSafeInteger(numeric) ? Math.max(maximum, numeric) : maximum;
+  }, 0);
+  const highest = Math.max(
+    localHighest,
+    await highestSequenceOnOtherRefs(
+      git,
+      root,
+      marker,
+      QUESTION_RECORD_SUBDIRECTORIES,
+    ),
+  );
+  return `Q-${highest + 1}`;
+}
+
+/** QCLI-445: parses one `--option <key>=<label>:<description>` value into the
+ * record's option shape. The key is everything before the first `=`, the label
+ * everything before the first `:` after it, and the description the rest. */
+function parseQuestionOption(value: string): {
+  readonly key: string;
+  readonly label: string;
+  readonly description: string;
+} {
+  const equals = value.indexOf("=");
+  const colon = value.indexOf(":", equals + 1);
+  if (equals <= 0 || colon <= equals + 1) {
+    throw new FlagUsageError(
+      `--option expects <key>=<label>:<description>, but got ${JSON.stringify(value)}.`,
+    );
+  }
+  return {
+    key: value.slice(0, equals),
+    label: value.slice(equals + 1, colon),
+    description: value.slice(colon + 1),
+  };
+}
+
 /** Asks one question on the real terminal and returns the trimmed answer, or
  * defaultValue when the answer is empty. Swapped out in tests. */
 async function readlinePrompt(
@@ -1823,6 +1875,8 @@ export async function runQuest(
     const taskReader = async () => createTaskReader(await resolvedRoot());
     const planningService = async () =>
       createPlanningService(await resolvedRoot());
+    const questionService = async () =>
+      createQuestionService(await resolvedRoot());
     let taskIdPrefix: Promise<string> | undefined;
     const configuredTaskIdPrefix = () =>
       (taskIdPrefix ??= (async () => {
@@ -3132,6 +3186,158 @@ export async function runQuest(
         );
       }
       return failure("usage", draftFallback);
+    }
+    if (arguments_[0] === "question") {
+      const action = arguments_[1];
+      const rest = arguments_.slice(2);
+      if (["answer", "withdraw", "view"].includes(action ?? "")) {
+        const refused = flagShapedPositional(
+          `question ${action}`,
+          rest[0],
+          "question id",
+        );
+        if (refused) return refused;
+      }
+      const positional = ["answer", "withdraw", "view"].includes(action ?? "");
+      const parsed = flags(
+        positional ? rest.slice(1) : rest,
+        action === "ask" ? ["--option"] : [],
+      );
+      if (!action || !parsed)
+        return failure("usage", "question requires a valid action.");
+      const questions = await questionService();
+      const questionFallback =
+        "question action is invalid or missing required arguments.";
+      if (action === "list") {
+        const listFlags = ["--status"];
+        if (!only(parsed, listFlags))
+          return usageFailure(parsed, listFlags, questionFallback);
+        return output(
+          {
+            schemaVersion: 1,
+            kind: "question.list",
+            data: await questions.list(one(parsed, "--status")),
+          },
+          modeFor(parsed),
+        );
+      }
+      if (action === "view" && rest[0]) {
+        if (!only(parsed, []))
+          return usageFailure(parsed, [], questionFallback);
+        return output(
+          {
+            schemaVersion: 1,
+            kind: "question.view",
+            data: await questions.view(rest[0]),
+          },
+          modeFor(parsed),
+        );
+      }
+      if (action === "ask") {
+        const askFlags = [
+          "--id",
+          "--title",
+          "--context",
+          "--option",
+          "--recommend",
+          "--actor",
+          "--actor-kind",
+          "--accountable-human",
+        ];
+        if (!only(parsed, askFlags))
+          return usageFailure(parsed, askFlags, questionFallback);
+        const writeActor = actor(parsed);
+        if (!writeActor)
+          return failure(
+            "denied",
+            "Question writes require an explicit actor declaration.",
+          );
+        const title = one(parsed, "--title");
+        if (!title) return failure("usage", questionFallback);
+        const explicitId = one(parsed, "--id");
+        const data = await questions.ask(
+          explicitId ??
+            (await nextQuestionId(questions, git, await resolvedRoot())),
+          {
+            title,
+            context: one(parsed, "--context"),
+            options: (parsed.values.get("--option") ?? []).map(
+              parseQuestionOption,
+            ),
+            recommended: one(parsed, "--recommend"),
+            createdAt: new Date().toISOString(),
+          },
+          explicitId !== undefined,
+        );
+        return output(
+          { schemaVersion: 1, kind: "question.asked", data },
+          modeFor(parsed),
+        );
+      }
+      if (action === "answer" && rest[0]) {
+        const answerFlags = [
+          "--choice",
+          "--text",
+          "--via",
+          "--actor",
+          "--actor-kind",
+          "--accountable-human",
+        ];
+        if (!only(parsed, answerFlags))
+          return usageFailure(parsed, answerFlags, questionFallback);
+        const writeActor = actor(parsed);
+        // QCLI-445: the CLI half of the design's forgery guard -- an answer is
+        // the operator's own, so only a `human` actor may record one.
+        if (writeActor?.kind !== "human")
+          return failure(
+            "denied",
+            "A question answer must record a human actor: pass --actor <operator id> --actor-kind human.",
+          );
+        const choice = one(parsed, "--choice");
+        const text = one(parsed, "--text");
+        if (choice === undefined && text === undefined)
+          return failure("usage", questionFallback);
+        const via = one(parsed, "--via");
+        const data = await questions.answer(rest[0], {
+          ...(choice !== undefined ? { choice } : {}),
+          ...(text !== undefined ? { text } : {}),
+          actor: writeActor.id,
+          ...(via !== undefined ? { via } : {}),
+          answeredAt: new Date().toISOString(),
+        });
+        return output(
+          { schemaVersion: 1, kind: "question.answered", data },
+          modeFor(parsed),
+        );
+      }
+      if (action === "withdraw" && rest[0]) {
+        const withdrawFlags = [
+          "--reason",
+          "--actor",
+          "--actor-kind",
+          "--accountable-human",
+        ];
+        if (!only(parsed, withdrawFlags))
+          return usageFailure(parsed, withdrawFlags, questionFallback);
+        const writeActor = actor(parsed);
+        if (!writeActor)
+          return failure(
+            "denied",
+            "Question writes require an explicit actor declaration.",
+          );
+        const reason = one(parsed, "--reason");
+        if (!reason) return failure("usage", questionFallback);
+        const data = await questions.withdraw(rest[0], {
+          reason,
+          actor: writeActor.id,
+          withdrawnAt: new Date().toISOString(),
+        });
+        return output(
+          { schemaVersion: 1, kind: "question.withdrawn", data },
+          modeFor(parsed),
+        );
+      }
+      return failure("usage", questionFallback);
     }
     if (arguments_[0] !== "task")
       return failure("usage", "Unknown or missing Quest command.");
@@ -4554,6 +4760,9 @@ export async function runQuest(
         "draft_not_found",
         "milestone_not_found",
         "decision_not_found",
+        // QCLI-445: a `question` record lives one-per-file like a draft, so an
+        // unknown id is the same not-found outcome those reads report.
+        "question_not_found",
         // QCLI-257: MigrationBacklogService.status() throws this plain Error
         // for an unknown or never-previewed digest; rollback() calls status()
         // internally and inherits the identical message on the identical

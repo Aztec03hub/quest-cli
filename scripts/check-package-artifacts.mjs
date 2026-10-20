@@ -4,6 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  hostPlatformTarget,
+  probeReleaseBinary,
+  releaseProbeEnablement,
+  spawnRunner,
+} from "./release-binary-probe.mjs";
+
 const root = fileURLToPath(new URL("..", import.meta.url));
 const npmCache = join(tmpdir(), "quest-npm-cache");
 
@@ -77,6 +84,44 @@ for (const directory of packages.sort()) {
       `Unexpected published files in ${directory}: ${files?.join(",")}`,
     );
 }
+// QCLI-509 / DEC-204. The checksum comparison above is self-referential: both
+// the platform manifest's digest and root's map were regenerated from these
+// same bytes, so a binary stale relative to src/ passes by construction. This
+// probe is the part a digest cannot be: it executes the committed binary and
+// requires it to answer commands that exist only in this source tree.
+//
+// It is release-scoped on purpose. `check:packages` also runs in `source-gates`,
+// where the release flow deliberately passes with a strings-only bump and
+// still-stale binaries (see release-binary-probe.mjs); a probe there would
+// redden the gate that CI needs green to build the very bytes it is asking
+// for. Enablement is therefore the native qualification job for this host, or
+// an explicit QUEST_RELEASE_BINARY_PROBE=1.
+const hostTarget = hostPlatformTarget();
+const releaseProbe = releaseProbeEnablement({ target: hostTarget });
+if (releaseProbe.enabled && hostTarget) {
+  const executable = process.platform === "win32" ? "quest.exe" : "quest";
+  const binary = join(root, "npm", `quest-${hostTarget}`, "bin", executable);
+  const probe = await probeReleaseBinary({
+    run: spawnRunner(binary, root),
+  });
+  if (!probe.ok)
+    throw new Error(
+      [
+        `The ${hostTarget} binary at npm/quest-${hostTarget}/bin/${executable} does not implement capabilities this source tree has: the committed bytes are stale relative to src/, or -- on a dispatched run, where this file was just rebuilt here -- the build itself is broken.`,
+        "A checksum map regenerated from that same binary cannot see this -- that is the defect QCLI-509 exists to close.",
+        "Rebuild the platform packages from this tree and commit the new bytes with their checksums (release runbook, 'Why strings first, then bytes').",
+        ...probe.problems.map((problem) => `  - ${problem}`),
+      ].join("\n"),
+    );
+  console.log(
+    `${hostTarget}: the binary at npm/quest-${hostTarget}/bin/${executable} answers the release probes (${probe.probesRun} probes, task ${probe.id} read).`,
+  );
+} else if (hostTarget) {
+  console.log(
+    `${hostTarget}: release binary probe skipped (${releaseProbe.reason}).`,
+  );
+}
+
 const rootPacked = await Bun.$`npm pack --dry-run --json --cache ${npmCache}`
   .cwd(root)
   .json();

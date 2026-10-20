@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compareTaskIds } from "../src/domain/tasks/tasks.ts";
+import { runCommand } from "./helpers/spawn.ts";
 
 /**
  * Task ids order by their number, not by their characters. With eleven or more
@@ -16,15 +17,7 @@ const ACTOR = ["--actor", "person-1", "--actor-kind", "human"] as const;
 const roots: string[] = [];
 
 function quest(workspace: string, args: readonly string[]) {
-  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
-    cwd: workspace,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  return {
-    exitCode: child.exitCode ?? 0,
-    stdout: child.stdout ? child.stdout.toString() : "",
-  };
+  return runCommand([process.execPath, MAIN, ...args], { cwd: workspace });
 }
 
 /** T-1 to T-12, all To Do. */

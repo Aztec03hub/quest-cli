@@ -1,6 +1,6 @@
 {
   "name": "opum-quest",
-  "version": "0.13.0",
+  "version": "0.14.1",
   "description": "Drive the quest CLI: create, list, view, edit, complete, and archive tasks, drafts, milestones, and decisions in a Quest-initialized workspace instead of editing tracker state directly. Cut from the same quest-cli repository and tag as the CLI itself, so this skill can never describe a version you don't have. Also ships the Quest board: a pane listing the tasks being worked on in the session's own repository, editable there.",
   "author": {
     "name": "Opum AI",

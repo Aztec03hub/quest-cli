@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runCommand } from "./helpers/spawn.ts";
 
 /**
  * QCLI-277: `task edit`'s write path had real optimistic-concurrency
@@ -26,17 +27,10 @@ interface SpawnResult {
 }
 
 function spawnQuest(workspace: string, args: readonly string[]): SpawnResult {
-  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
+  return runCommand([process.execPath, MAIN, ...args], {
     cwd: workspace,
     stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
   });
-  return {
-    exitCode: child.exitCode ?? 0,
-    stdout: child.stdout ? child.stdout.toString() : "",
-    stderr: child.stderr ? child.stderr.toString() : "",
-  };
 }
 
 const HUMAN_ACTOR = ["--actor", "human-1", "--actor-kind", "human"] as const;

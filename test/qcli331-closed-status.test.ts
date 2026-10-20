@@ -12,6 +12,7 @@ import {
   resolveConfiguredStatus,
   taskState,
 } from "../src/domain/tasks/tasks.ts";
+import { runCommand } from "./helpers/spawn.ts";
 
 /**
  * QCLI-331, ruled by opum-doc ADR "Add a second terminal task status for
@@ -31,16 +32,9 @@ const ACTOR = ["--actor", "person-1", "--actor-kind", "human"] as const;
 const roots: string[] = [];
 
 function quest(workspace: string, args: readonly string[]) {
-  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
+  return runCommand([process.execPath, MAIN, ...args], {
     cwd: workspace,
-    stdout: "pipe",
-    stderr: "pipe",
   });
-  return {
-    exitCode: child.exitCode ?? 0,
-    stdout: child.stdout ? child.stdout.toString() : "",
-    stderr: child.stderr ? child.stderr.toString() : "",
-  };
 }
 
 /** A fresh workspace holding `count` To Do tasks, T-1..T-count. */

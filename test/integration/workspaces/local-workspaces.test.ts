@@ -403,6 +403,37 @@ test("initializeWorkspace refuses a directory holding task records but no worksp
   }
 });
 
+test("initializeWorkspace refuses a directory holding only question records but no workspace.toml (QCLI-445)", async () => {
+  const root = await repository();
+  try {
+    const port = new LocalWorkspacePort();
+    await initializeWorkspace(port, root, { taskIdPrefix: "OLD" });
+    const questionPath = join(root, ".quest", "questions", "Q-1.json");
+    await mkdir(join(root, ".quest", "questions"), { recursive: true });
+    await writeFile(
+      questionPath,
+      `${JSON.stringify({
+        id: "Q-1",
+        title: "Only a question",
+        options: [
+          { key: "A", label: "Yes", description: "y" },
+          { key: "B", label: "No", description: "n" },
+        ],
+        recommended: "A",
+        status: "open",
+      })}\n`,
+    );
+    await rm(join(root, ".quest", "workspace.toml"));
+
+    await expect(
+      initializeWorkspace(port, root, { taskIdPrefix: "NEW" }),
+    ).rejects.toMatchObject({ code: "stray_content" });
+    expect(await readFile(questionPath, "utf8")).toContain('"Q-1"');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("unsupported bare repositories fail before any Quest path is created", async () => {
   const bare = await mkdtemp(join(tmpdir(), "quest-bare-"));
   try {

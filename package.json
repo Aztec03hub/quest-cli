@@ -1,6 +1,6 @@
 {
   "name": "@opum-ai/quest",
-  "version": "0.13.0",
+  "version": "0.14.1",
   "description": "Deterministic, LLM-free task tracker CLI — the record layer coding agents and humans write to.",
   "license": "MIT",
   "author": "Opum AI",
@@ -36,7 +36,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "biome lint src test scripts hooks types tests biome.json package.json tsconfig.json",
-    "format": "biome format --write .",
+    "format": "biome format --write src test scripts hooks types tests biome.json package.json tsconfig.json",
     "format:check": "biome ci --linter-enabled=false --assist-enabled=false src test scripts hooks types tests biome.json package.json tsconfig.json",
     "layer:check": "node scripts/check-layers.mjs",
     "build:packages": "\"$npm_execpath\" run scripts/build-platform-packages.mjs",
@@ -60,20 +60,20 @@
     "publish:release": "node scripts/publish-release.mjs"
   },
   "optionalDependencies": {
-    "@opum-ai/quest-darwin-arm64": "0.13.0",
-    "@opum-ai/quest-darwin-x64": "0.13.0",
-    "@opum-ai/quest-linux-arm64": "0.13.0",
-    "@opum-ai/quest-linux-x64": "0.13.0",
-    "@opum-ai/quest-win32-arm64": "0.13.0",
-    "@opum-ai/quest-win32-x64": "0.13.0"
+    "@opum-ai/quest-darwin-arm64": "0.14.1",
+    "@opum-ai/quest-darwin-x64": "0.14.1",
+    "@opum-ai/quest-linux-arm64": "0.14.1",
+    "@opum-ai/quest-linux-x64": "0.14.1",
+    "@opum-ai/quest-win32-arm64": "0.14.1",
+    "@opum-ai/quest-win32-x64": "0.14.1"
   },
   "questPlatformPackages": {
-    "@opum-ai/quest-darwin-arm64": "59d1c0dc66a499ce372f3af1d5ef01f8d8f9734a0d06539c97d91582ab8c1e60",
-    "@opum-ai/quest-darwin-x64": "7682e1345e781bd1a83a76970d36d3f5827a46abf6784d2f142d6317f0f44e69",
-    "@opum-ai/quest-linux-arm64": "89cdbeb5631b7a793f6dffe183a588623719863c69ad7d2a91b9fea9918ea76b",
-    "@opum-ai/quest-linux-x64": "1609c920eaaf24edb55d13ed593a92e668a1e54ae83d360a4e6b6d858c73e0fd",
-    "@opum-ai/quest-win32-arm64": "7e56502b7bbd33047602e722a0dc90e9f107f3ddf2deb00c10d24405163af9f2",
-    "@opum-ai/quest-win32-x64": "28954d2f8e684ae09faedb5ebdbcef584149edf57ef98cfd10fa08a46d84a3f7"
+    "@opum-ai/quest-darwin-arm64": "9f6583ef1358a602c1728b22155fbf847cbb20e3b3c1f969c7a146a3e11f57da",
+    "@opum-ai/quest-darwin-x64": "9e71bb587dffb0f769e3ac1980233203e21776cba1e7d24ae938b8e4e5fa2603",
+    "@opum-ai/quest-linux-arm64": "bbd80b5aa54540e9d0dbbc4f2d5a1c38b7a38b68dd6b2b03c7b86ec7c7ef8cc5",
+    "@opum-ai/quest-linux-x64": "c50c0f3e4910f9497a7491e8ae48c472b478bb2cd6a81c3c21c88e40a18a6457",
+    "@opum-ai/quest-win32-arm64": "89589f0e19ed4e97140c04e92a52398a0567d181224cbd28a264c505fb5622bd",
+    "@opum-ai/quest-win32-x64": "e36e6142664586819354d838d15032fe67ea5193fa320b3a7fe760c18291e79e"
   },
   "dependencies": {
     "@clack/prompts": "^1.8.0",

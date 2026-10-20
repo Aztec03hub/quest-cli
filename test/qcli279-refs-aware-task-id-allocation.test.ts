@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runCommand } from "./helpers/spawn.ts";
 
 /**
  * QCLI-279. `task create`'s id allocator used to compute "next available"
@@ -23,30 +24,15 @@ import { join } from "node:path";
 const MAIN = new URL("../src/cli/main.ts", import.meta.url).pathname;
 
 function quest(workspace: string, args: readonly string[]) {
-  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
+  return runCommand([process.execPath, MAIN, ...args], {
     cwd: workspace,
     env: { ...process.env },
-    stdout: "pipe",
-    stderr: "pipe",
   });
-  return {
-    exitCode: child.exitCode ?? 0,
-    stdout: child.stdout ? child.stdout.toString() : "",
-    stderr: child.stderr ? child.stderr.toString() : "",
-  };
 }
 
 function git(workspace: string, args: readonly string[]) {
-  const child = Bun.spawnSync(["git", ...args], {
-    cwd: workspace,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  return {
-    exitCode: child.exitCode ?? 0,
-    stdout: child.stdout ? child.stdout.toString().trim() : "",
-    stderr: child.stderr ? child.stderr.toString() : "",
-  };
+  const result = runCommand(["git", ...args], { cwd: workspace });
+  return { ...result, stdout: result.stdout.trim() };
 }
 
 async function gitWorkspace() {

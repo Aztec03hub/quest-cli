@@ -696,6 +696,64 @@ test("the live manifest is non-empty and matches its result golden", () => {
       mutates: true,
     },
     {
+      name: "question ask",
+      schemaVersion: 1,
+      kind: "question.asked",
+      mutates: true,
+      fields: ["context", "options", "recommended", "title"],
+    },
+    {
+      name: "question answer",
+      schemaVersion: 1,
+      kind: "question.answered",
+      mutates: true,
+      fields: ["answer"],
+    },
+    {
+      name: "question withdraw",
+      schemaVersion: 1,
+      kind: "question.withdrawn",
+      mutates: true,
+      fields: ["withdrawal"],
+    },
+    {
+      name: "question list",
+      schemaVersion: 1,
+      kind: "question.list",
+      mutates: false,
+      filters: ["status"],
+      fields: [
+        "answer",
+        "context",
+        "createdAt",
+        "id",
+        "options",
+        "recommended",
+        "status",
+        "title",
+        "updatedAt",
+        "withdrawal",
+      ],
+    },
+    {
+      name: "question view",
+      schemaVersion: 1,
+      kind: "question.view",
+      mutates: false,
+      fields: [
+        "answer",
+        "context",
+        "createdAt",
+        "id",
+        "options",
+        "recommended",
+        "status",
+        "title",
+        "updatedAt",
+        "withdrawal",
+      ],
+    },
+    {
       name: "overview",
       schemaVersion: 1,
       kind: "project.overview",
@@ -881,7 +939,19 @@ test("the overview guide lists every lifecycle verb the manifest declares", () =
     (guide) => guide.name === "overview",
   )?.content;
   expect(commandList).toBeDefined();
-  for (const group of ["task", "draft", "milestone", "decision"]) {
+  // QCLI-445 review: derive the groups from the manifest rather than naming
+  // them, so a family added later cannot ship a guide that silently omits its
+  // verbs. A lifecycle group is a family with a `<group> list` verb, which is
+  // exactly the task/draft/milestone/decision set and now question too.
+  const groups = [
+    ...new Set(
+      commandManifest.commands
+        .map((entry: { name: string }) => entry.name)
+        .filter((name: string) => name.endsWith(" list"))
+        .map((name: string) => name.slice(0, -" list".length)),
+    ),
+  ].sort();
+  for (const group of groups) {
     const mentioned = new Set<string>();
     for (const line of (commandList ?? "").split("\n")) {
       const spans = [...line.matchAll(/`([^`]+)`/g)].map((match) => match[1]);

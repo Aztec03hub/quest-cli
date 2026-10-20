@@ -273,12 +273,34 @@ version of this section said a CI dispatch was simply the normal procedure.
 difference** -- recorded here rather than silently resolved, because the
 mechanism underneath is what a bump actually has to obey.
 
-`check-package-artifacts.mjs` tests two things *independently*: that every
+`check-package-artifacts.mjs` tests three things *independently*: that every
 version string agrees (root `.version`, each `optionalDependencies` pin, each
-platform manifest's `.version`), and that every checksum agrees with the bytes
-it describes (each manifest's `questBinarySha256` and root's
-`questPlatformPackages` entry, both against the actual binary on disk). A
-commit can therefore satisfy the second while moving only the first.
+platform manifest's `.version`); that every checksum agrees with the bytes it
+describes (each manifest's `questBinarySha256` and root's
+`questPlatformPackages` entry, both against the actual binary on disk); and,
+in a release-context run, that the committed host-platform binary actually
+answers commands this source tree implements. A commit can therefore satisfy
+the second while moving only the first, and the second alone cannot see a
+binary stale relative to `src/`, because both copies of the digest were
+regenerated from that same binary.
+
+**The third check is release-scoped on purpose (QCLI-509 / DEC-204).** It
+executes the committed binary and requires `task list --fields id` and
+`task view <id> --fields title` to exit 0 and return the projected shape (the
+DEC-204 probe pair for 0.14.0). It runs only when
+`QUEST_QUALIFICATION_TARGET` names this host -- the native
+`immutable-candidates` job, where on a tag ref no rebuild runs and the probe
+therefore executes the committed artifact as-is, while a dispatched run probes
+the binary that run just built -- or
+when `QUEST_RELEASE_BINARY_PROBE=1` opts in explicitly. It does **not** run in
+`source-gates`, where that variable is unset and the gate reports the probe as
+skipped with the reason: the strings-first intermediate state below must stay
+green while the binaries are still the previous bytes, and a probe there would
+redden the very gate CI needs green to build the new ones. The probe is a
+capability floor, not a general staleness detector, so a release that adds a
+new user-visible surface adds a probe for it in
+`scripts/release-binary-probe.mjs`; otherwise a binary stale in exactly that
+surface still passes.
 
 That is the intermediate state a bump needs, because of a CI dependency that
 is otherwise a trap. `check:packages` runs inside `source-gates`;

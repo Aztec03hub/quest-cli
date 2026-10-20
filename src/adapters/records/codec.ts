@@ -37,5 +37,7 @@ export function encodeAuthoredRecord(
     throw new RecordValidationError(
       "Unsupported or malformed authored record schema.",
     );
-  return new TextEncoder().encode(JSON.stringify(parsed.data));
+  // Newline-terminated, as every other record writer in the store is
+  // (planning.json, tasks/, drafts/), so a question file ends like the rest.
+  return new TextEncoder().encode(`${JSON.stringify(parsed.data)}\n`);
 }

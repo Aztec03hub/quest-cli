@@ -13,6 +13,7 @@ import {
   resolveVocabularyValue,
   VocabularyValueError,
 } from "../src/domain/tasks/vocabulary.ts";
+import { runCommand } from "./helpers/spawn.ts";
 
 /**
  * QCLI-330, ruled by opum-doc ADR "Make quest's type and priority vocabulary
@@ -43,16 +44,9 @@ afterAll(async () => {
 });
 
 function quest(cwd: string, args: readonly string[]) {
-  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
+  return runCommand([process.execPath, MAIN, ...args], {
     cwd,
-    stdout: "pipe",
-    stderr: "pipe",
   });
-  return {
-    exitCode: child.exitCode ?? 0,
-    stdout: child.stdout ? child.stdout.toString() : "",
-    stderr: child.stderr ? child.stderr.toString() : "",
-  };
 }
 
 async function tempRoot(): Promise<string> {

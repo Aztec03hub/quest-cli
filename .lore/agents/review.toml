@@ -2,7 +2,7 @@ schema_version = 1
 name = "review"
 description = "Reviews quest-cli changes against the governing Lore-integration ADR and ranked repository authority: architecture, component contracts, ownership, operations, and the active Story."
 kind = "specialist"
-max_tokens = 10000
+max_tokens = 32351
 pinned = [
   "adr/keep-lore-optional-and-integrate-only-through-versioned-public-records",
 ]

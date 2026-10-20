@@ -91,9 +91,12 @@ function recipesIn(guide: string, content: string): readonly string[] {
  * name and any flag they show are real, not that they run.
  *
  * Only spans beginning `quest ` are examined. The overview guide's command
- * table lists bare spellings like `task edit-batch`; those are covered from
- * the other direction by the manifest-to-guide check in
- * command-contract.test.ts.
+ * table lists bare spellings like `task edit-batch`. Those are NOT examined
+ * here; the ones inside a LIFECYCLE group (a family with a `<group> list`
+ * verb) are covered from the other direction by the manifest-to-guide check in
+ * command-contract.test.ts. A bare span outside those groups -- `completion
+ * bash`, `check`, `browser` -- is checked by neither, so it reads as prose
+ * here rather than as a machine-verified reference.
  */
 function mentionsIn(content: string): readonly string[] {
   return [...content.matchAll(/`(quest [^`]+)`/g)].map((span) =>
