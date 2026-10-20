@@ -282,6 +282,7 @@
 - 2026-10-11T23:59:43-05:00 6b8cf9c59089d913ea28313d66a8108cb3862dc9 docs(QCLI-464): name the gate set each release route runs (#583)
 - 2026-10-12T04:41:22-05:00 8cd3ba630224b2c1b56210c968ea2cc7a10229d7 fix(QCLI-490): remove fleet mode, gate auto-start, guard the clocks and bound each tick (#588)
 - 2026-10-12T09:27:53-05:00 6841f62ec9a2936baca6e84cfc40b0fa316e3e76 fix(QCLI-494): pin the auto-start gate, and count the naming child in the tick budget (#595)
+- 2026-10-12T11:52:35-05:00 ced2fee3ffafaa0f59ac484fe85cd821c37e7486 docs(QCLI-491): reconcile the gate-count sentences with the runbook's own table (#600)
 
 ## docs/adr
 
@@ -336,6 +337,7 @@
 - 2026-09-28T12:04:10-05:00 b1c52d0fd5a21c8b62a01b55ea533729add9dc3d feat(QCLI-403): the breaking-bump check reads lore-cli's CHANGELOG by ref (#383)
 - 2026-10-04T19:11:13-05:00 0624458e8da144ff6fe80478a756a736c7becf5b feat(QCLI-296): derive dev version from describe distance behind QUEST_RELEASE_BUILD (#516)
 - 2026-10-11T16:49:44-05:00 7570463aca90e71faea70ef478f8d9c6ffe963e0 feat(QCLI-305): install stage-two platform candidates from a qualification run (#576)
+- 2026-10-19T15:40:06-05:00 01cd98285047e9e5a59ed33eb27c17d827f3aa7c fix(QCLI-509): probe the committed release binary against this source tree (DEC-204) (#624)
 
 ## docs/specs
 
