@@ -7,9 +7,9 @@ import { repairHint } from "../scripts/promote-release.mjs";
 
 /**
  * QCLI-515 (opum-doc DEC-204 (3)): `promote-release.mjs --notes-from <sha>`
- * moves only where the release notes are read, and only to a CHANGELOG-only
- * descendant of the tag's commit. Each refusal is proved by name, and so is
- * the accepting case, so a gate that refuses everything cannot pass.
+ * moves only where the release notes are read, and only to a descendant of the
+ * tag's commit whose net range is CHANGELOG.md plus .quest/ (DEC-204 (3a)). Each
+ * refusal is proved by name, and so is the accepting case, so a gate that refuses everything cannot pass.
  */
 
 const TAG = "053d8595f2caa34b04abc451d711e62fff5314b4";
@@ -189,7 +189,11 @@ test("repair hint: the hand-cut route when notes came from --notes-from, the too
   const handCut = repairHint("0.14.1", GOOD);
   expect(handCut).not.toContain("Repair with: node scripts/github-release.mjs");
   expect(handCut).toContain("Do NOT use github-release.mjs --create");
-  expect(handCut).toContain(`gh release create v0.14.1 --verify-tag`);
+  // QCLI-516: host-pinned like the tool, and the notes file is the section BODY
+  // (a heading in it makes every later preflight refuse with "notes differ").
+  expect(handCut).toContain(
+    'gh release create v0.14.1 -R github.com/opum-ai/quest-cli --verify-tag --title "Quest CLI 0.14.1" --notes-file <the section body, without its ## heading> --latest',
+  );
   expect(handCut).toContain(GOOD);
 });
 
@@ -256,14 +260,16 @@ test("refused: CHANGELOG.md absent, added, removed or renamed in the net range",
   ]) {
     const outcome = await accepts(files);
     expect(outcome.ok).toBe(false);
-    if (!outcome.ok) expect(outcome.detail).toContain("CHANGELOG.md");
+    if (!outcome.ok) expect(outcome.detail).toContain("must be modified");
   }
 });
 
 // The REAL ranges, read from the GitHub API on 2026-10-20 and recorded as
-// fixtures (test/fixtures/qcli515), not typed by hand: the unit tests above
+// fixtures (test/fixtures/qcli515), projected from the API rather than raw
+// output (they carry fields the API does not return): the unit tests above
 // mock `files` and could not see that the real 0.14.1 range carries a tracker
-// record beside CHANGELOG.md.
+// record beside CHANGELOG.md. They cover the file list only; dev reachability
+// is mocked as "behind" for both shas.
 const fixture = (name: string) =>
   JSON.parse(
     readFileSync(

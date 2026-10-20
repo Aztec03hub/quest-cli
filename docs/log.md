@@ -283,6 +283,7 @@
 - 2026-10-12T04:41:22-05:00 8cd3ba630224b2c1b56210c968ea2cc7a10229d7 fix(QCLI-490): remove fleet mode, gate auto-start, guard the clocks and bound each tick (#588)
 - 2026-10-12T09:27:53-05:00 6841f62ec9a2936baca6e84cfc40b0fa316e3e76 fix(QCLI-494): pin the auto-start gate, and count the naming child in the tick budget (#595)
 - 2026-10-12T11:52:35-05:00 ced2fee3ffafaa0f59ac484fe85cd821c37e7486 docs(QCLI-491): reconcile the gate-count sentences with the runbook's own table (#600)
+- 2026-10-20T02:21:58-05:00 d86adef47da3ac95326b12a61858b444112637bc feat(QCLI-515): promote-release.mjs --notes-from (DEC-204 (3), used once for 0.14.1) (#634)
 
 ## docs/adr
 

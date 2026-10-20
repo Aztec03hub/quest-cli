@@ -729,7 +729,7 @@ export async function verifyTags({
 export function repairHint(version, notesFrom) {
   if (notesFrom === undefined)
     return `Repair with: node scripts/github-release.mjs --version ${version} --create`;
-  return `Do NOT use github-release.mjs --create: it reads the notes at the tag's commit, which has no "## ${version}" section (this promotion read them from ${notesFrom} by --notes-from). Cut the release by hand from the "## ${version}" section at ${notesFrom}: gh release create v${version} --verify-tag --title "Quest CLI ${version}" --notes-file <that section>`;
+  return `Do NOT use github-release.mjs --create: it reads the notes at the tag's commit, which has no "## ${version}" section (this promotion read them from ${notesFrom} by --notes-from). Cut the release by hand from the "## ${version}" section at ${notesFrom}: gh release create v${version} -R github.com/opum-ai/quest-cli --verify-tag --title "Quest CLI ${version}" --notes-file <the section body, without its ## heading> --latest`;
 }
 
 async function main(argv) {
@@ -921,7 +921,7 @@ async function main(argv) {
       }
       notesCommit = from.commit;
       console.log(
-        `Release notes are read from ${notesCommit.slice(0, 7)}, a descendant of the tag commit (CHANGELOG.md plus .quest/ only) ${peeled.commit.slice(0, 7)} (--notes-from); the bundle and receipt stay bound to ${peeled.commit.slice(0, 7)}.`,
+        `Release notes are read from ${notesCommit.slice(0, 7)}, a descendant (CHANGELOG.md plus .quest/ only) of the tag commit ${peeled.commit.slice(0, 7)} (--notes-from); the bundle and receipt stay bound to ${peeled.commit.slice(0, 7)}.`,
       );
     }
     const notes = await releaseNotesFor(version, { commit: notesCommit });
