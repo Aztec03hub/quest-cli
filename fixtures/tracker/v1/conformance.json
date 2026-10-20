@@ -1,6 +1,6 @@
 {
   "fixtureVersion": 1,
-  "questVersion": "0.14.0",
+  "questVersion": "0.14.1",
   "contractVersion": 1,
   "manifest": {"schemaVersion":1,"kind":"manifest.registry","data":{"commands":[{"name":"task status-flow","schemaVersion":1,"kind":"task.status-flow","mutates":false},{"name":"task list","schemaVersion":1,"kind":"task.list","mutates":false},{"name":"task view","schemaVersion":1,"kind":"task.view","mutates":false},{"name":"search","schemaVersion":1,"kind":"task.search","mutates":false},{"name":"task create","schemaVersion":1,"kind":"task.created","mutates":true},{"name":"task edit","schemaVersion":1,"kind":"task.updated","mutates":true}]}},
   "task": {"id":"T-1","title":"Conformance task","status":"To Do","labels":["doc:story"],"summary":"Public tracker record","description":"A public conformance fixture.","acceptanceCriteria":["round-trip"],"definitionOfDone":[],"plan":[],"implementationNotes":[],"comments":[],"documentation":["docs/stories/example.md"],"dependencies":[]},

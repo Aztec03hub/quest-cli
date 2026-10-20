@@ -5,10 +5,18 @@ Records start here, at 0.5.0. Earlier releases are documented in
 history; this file is the forward-looking record.
 
 Each version heading is dated with the UTC day `@opum-ai/quest` reached npm, read
-from the registry's `time` field. 0.6.1 and 0.8.0 never reached npm, so each is
-dated by its own tag. No date here is inferred (QCLI-398).
+from the registry's `time` field. 0.6.1, 0.8.0 and 0.14.0 never reached npm, so
+each is dated by its own tag. No date here is inferred (QCLI-398).
 
 ## Unreleased
+
+### Changed
+
+- **0.14.1 republishes 0.14.0's content, because 0.14.0 was tagged and never
+  published** (DEC-204 (2); QCLI-499). Both sides' `v0.14.0` tags exist and stay
+  immutable, but lore's release gate caught a defect before either side
+  published, so the pair moved to 0.14.1 under Constitution Article 3. Only the
+  version strings move here; the code is 0.14.0's.
 
 ## 0.14.0
 

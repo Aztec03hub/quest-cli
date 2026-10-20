@@ -20,7 +20,7 @@ export const DEFAULT_TIMEOUT_MS = 5_000;
  * what the boundary was built and qualified against; it is not a version
  * consumers are required to match.
  */
-export const QUEST_ADAPTER_PINNED_VERSION = "0.14.0" as const;
+export const QUEST_ADAPTER_PINNED_VERSION = "0.14.1" as const;
 
 /**
  * The schema-1 manifest descriptors the adapter boundary requires from the
