@@ -1268,8 +1268,9 @@ export function validateMilestoneClosure(
 }
 
 /**
- * A sort key that reads the number in a task id as a number: `SM-2` sorts
- * before `SM-10`, where a plain string comparison puts `SM-10` first.
+ * A sort key that reads the number in a task, draft, milestone or decision id
+ * as a number: `SM-2` sorts before `SM-10`, where a plain string comparison
+ * puts `SM-10` first.
  */
 export function taskIdSortKey(id: string): string {
   return id.replace(/\d+/g, (digits) => digits.padStart(20, "0"));

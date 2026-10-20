@@ -639,7 +639,7 @@ export class PlanningService {
       )
       .sort(
         (left, right) =>
-          left.milestoneId.localeCompare(right.milestoneId) ||
+          compareTaskIds(left.milestoneId, right.milestoneId) ||
           compareTaskIds(left.taskId, right.taskId),
       );
     // QCLI-302: only ACTIVE records are checked, because the repair the hint
@@ -714,11 +714,11 @@ export class PlanningService {
           item.taskIds.length === 0,
       )
       .map((item) => item.id)
-      .sort();
+      .sort(compareTaskIds);
     const decisionIds = snapshot.decisions
       .filter((item) => item.status === "superseded")
       .map((item) => item.id)
-      .sort();
+      .sort(compareTaskIds);
     const plan: PlanningCleanupPlan = {
       milestoneIds,
       decisionIds,

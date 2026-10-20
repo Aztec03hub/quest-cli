@@ -1043,7 +1043,7 @@ export class TaskService {
     return (
       (await this.repository.readAll()).drafts
         ?.filter((record) => includeArchived || record.location === "drafts")
-        .sort((a, b) => a.draft.id.localeCompare(b.draft.id)) ?? []
+        .sort((a, b) => compareTaskIds(a.draft.id, b.draft.id)) ?? []
     );
   }
   async viewDraft(id: string): Promise<LocatedDraft> {
