@@ -10,14 +10,6 @@ each is dated by its own tag. No date here is inferred (QCLI-398).
 
 ## Unreleased
 
-### Changed
-
-- **0.14.1 republishes 0.14.0's content, because 0.14.0 was tagged and never
-  published** (DEC-204 (2); QCLI-499). Both sides' `v0.14.0` tags exist and stay
-  immutable, but lore's release gate caught a defect before either side
-  published, so the pair moved to 0.14.1 under Constitution Article 3. Only the
-  version strings move here; the code is 0.14.0's.
-
 ### Fixed
 
 - **Draft ids and the ids `cleanup` reports order by number too.** `draft list`
@@ -26,6 +18,16 @@ each is dated by its own tag. No date here is inferred (QCLI-398).
   ids as plain strings. They now use `compareTaskIds`, as does the milestone
   column of `doctor`'s planning issues. Milestone lists and the planning board
   were already in numeric order. This builds on the task-id change below.
+
+## 0.14.1 - 2026-10-20
+
+### Changed
+
+- **0.14.1 republishes 0.14.0's content, because 0.14.0 was tagged and never
+  published** (DEC-204 (2); QCLI-499). Both sides' `v0.14.0` tags exist and stay
+  immutable, but lore's release gate caught a defect before either side
+  published, so the pair moved to 0.14.1 under Constitution Article 3. Only the
+  version strings move here; the code is 0.14.0's.
 
 ## 0.14.0
 

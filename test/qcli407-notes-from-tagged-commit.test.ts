@@ -238,18 +238,23 @@ const repairSource = readFileSync(
   "utf8",
 );
 
-test("promote reads the notes once, at the peeled commit, before the preflight and every tag move", () => {
+test("promote reads the notes once, at the peeled commit unless --notes-from names a descendant (QCLI-515), before the preflight and every tag move", () => {
   // One read, reused by the cut, so the bytes the refusal is judged on are the
   // bytes that are published.
   expect(promoteMain.match(/releaseNotesFor\(/g)?.length).toBe(1);
   const read = promoteMain.indexOf(
-    "releaseNotesFor(version, { commit: peeled.commit })",
+    "releaseNotesFor(version, { commit: notesCommit })",
   );
   const peel = promoteMain.indexOf(
     "const peeled = await resolveTagCommit(version)",
   );
   expect(peel).toBeGreaterThan(-1);
   expect(read).toBeGreaterThan(peel);
+  // QCLI-515: the commit read defaults to the peel, so without --notes-from the
+  // read is exactly the one this test has always pinned.
+  const fallback = promoteMain.indexOf("let notesCommit = peeled.commit;");
+  expect(fallback).toBeGreaterThan(peel);
+  expect(fallback).toBeLessThan(read);
   expect(read).toBeLessThan(promoteMain.indexOf("dryRun: true"));
   for (const later of ['flag: "wx"', "await promote({"])
     expect(read).toBeLessThan(promoteMain.indexOf(later));

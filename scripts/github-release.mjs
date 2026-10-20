@@ -291,7 +291,7 @@ export async function ensureGitHubRelease({
         return {
           ok: true,
           action: "recorded-exception",
-          detail: `release ${tag} exists and its stored notes differ from the "## ${version}" section at the commit the tag peels to BY RECORDED EXCEPTION (QCLI-410): ${recorded}. Nothing to repair -- the stored body is the record, this tool never edits it, and it is not marked latest`,
+          detail: `release ${tag} exists and its stored notes differ from the "## ${version}" section at the commit the tag peels to (or at the --notes-from commit, when the promotion was given one) BY RECORDED EXCEPTION (QCLI-410): ${recorded}. Nothing to repair -- the stored body is the record, this tool never edits it, and it is not marked latest`,
         };
       return {
         ok: false,
@@ -302,7 +302,7 @@ export async function ensureGitHubRelease({
         // and 0.8.0 were, measured) no longer matches, and the bytes that pass
         // are the tag-era ones. The refusal names that object rather than
         // leaving the operator to guess which side to change.
-        detail: `release ${tag} exists but its notes differ from the "## ${version}" section at the commit the tag peels to; this tool never edits an existing release, so make the release carry those bytes by hand, then re-run`,
+        detail: `release ${tag} exists but its notes differ from the "## ${version}" section at the commit the tag peels to (or at the --notes-from commit, when the promotion was given one); this tool never edits an existing release, so make the release carry those bytes by hand, then re-run`,
       };
     }
     if (!latest)
@@ -377,6 +377,131 @@ export async function ensureGitHubRelease({
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true });
   }
+}
+
+/**
+ * The commit a release's notes may be read from when it is not the tag's own
+ * (`promote-release.mjs --notes-from`, QCLI-515, opum-doc DEC-204 (3)). 0.14.1
+ * was tagged without a `## 0.14.1` section and the heading was fixed forward on
+ * dev; the tag, the receipt and the rc bytes stay bound to the tag's commit, and
+ * only the changelog read moves. Used once, for 0.14.1.
+ *
+ * Narrow on purpose, and each refusal names what failed:
+ * - a full 40-hex commit, never a branch or tag name, which can be re-pointed
+ *   where a commit cannot;
+ * - a DESCENDANT of `tagCommit` (compare status `ahead`), so the notes cannot
+ *   come from a sibling history, and a commit that is part of dev's history, so
+ *   it cannot be a sha that exists only in a fork;
+ * - whose net diff against `tagCommit` is CHANGELOG.md, modified in place, plus
+ *   at most tracker records under .quest/ (DEC-204 (3a)); any other path, or a
+ *   CHANGELOG.md that is added, renamed or removed, is refused by name. The
+ *   compare list stops at 300 files, so a full list is refused, not trusted.
+ * Every failure is `ok: false` with its cause; nothing is thrown or defaulted.
+ */
+export async function notesCommitFrom(
+  sha,
+  tagCommit,
+  { execFile: execFileFn = execFile } = {},
+) {
+  if (!/^[0-9a-f]{40}$/.test(String(sha)))
+    return {
+      ok: false,
+      detail: `--notes-from needs a full 40-hex commit sha, got ${JSON.stringify(sha)}; a branch or tag name can move, a commit cannot.`,
+    };
+  if (sha === tagCommit)
+    return {
+      ok: false,
+      detail: `--notes-from ${sha} is the tag's own commit; omit the flag to read the notes there.`,
+    };
+  let compare;
+  try {
+    const { stdout } = await execFileFn("gh", [
+      "api",
+      "--hostname",
+      "github.com",
+      `repos/${REPOSITORY_PATH}/compare/${tagCommit}...${sha}`,
+    ]);
+    compare = JSON.parse(stdout);
+  } catch (error) {
+    const detail = String(error?.stderr || error?.message || error)
+      .trim()
+      .split("\n")[0];
+    return {
+      ok: false,
+      detail: `${sha} could not be compared with the tag commit ${tagCommit} (${detail || "the read failed"}).`,
+    };
+  }
+  if (compare?.status !== "ahead")
+    return {
+      ok: false,
+      detail: `${sha} does not descend from the tag commit ${tagCommit} (compare status ${JSON.stringify(compare?.status ?? null)}); the notes may only be read from a descendant.`,
+    };
+  // quest-cli is public, so a sha can exist only in a fork's object network and
+  // still resolve through this repository's compare and contents endpoints. The
+  // notes must come from a commit that is part of dev's history: dev...sha is
+  // `behind` or `identical` exactly when sha is an ancestor of (or is) dev.
+  let onDev;
+  try {
+    const { stdout } = await execFileFn("gh", [
+      "api",
+      "--hostname",
+      "github.com",
+      `repos/${REPOSITORY_PATH}/compare/dev...${sha}`,
+    ]);
+    onDev = JSON.parse(stdout);
+  } catch (error) {
+    const detail = String(error?.stderr || error?.message || error)
+      .trim()
+      .split("\n")[0];
+    return {
+      ok: false,
+      detail: `${sha} could not be compared with dev (${detail || "the read failed"}), so it is not shown to be part of dev's history.`,
+    };
+  }
+  if (onDev?.status !== "behind" && onDev?.status !== "identical")
+    return {
+      ok: false,
+      detail: `${sha} is not part of dev's history (compare dev...sha status ${JSON.stringify(onDev?.status ?? null)}); the notes may only be read from a commit that landed on dev.`,
+    };
+  const files = Array.isArray(compare.files) ? compare.files : null;
+  if (!files || files.length === 0 || files.length >= 300)
+    return {
+      ok: false,
+      detail: `${sha} against ${tagCommit}: the changed-file list is ${files ? (files.length === 0 ? "empty" : "at the API's 300-file limit, so it may be truncated") : "missing"}; refusing rather than trusting it.`,
+    };
+  // DEC-204 (3a): the NET range may touch CHANGELOG.md and the tracker under
+  // .quest/ and nothing else. Tracker records are written on dev between the
+  // tag and any changelog fix (0.14.1: #630 and #631 before #632), so a
+  // CHANGELOG-only range would refuse the one commit this flag exists for. The
+  // notes are still read from CHANGELOG.md alone, and CHANGELOG.md itself must
+  // be a plain modification, not an add, rename or removal.
+  const underTracker = (path) =>
+    typeof path === "string" && path.startsWith(".quest/");
+  const changelog = files.filter((file) => file?.filename === "CHANGELOG.md");
+  const others = files.filter(
+    (file) =>
+      file?.filename !== "CHANGELOG.md" &&
+      !(
+        underTracker(file?.filename) &&
+        (file?.previous_filename === undefined ||
+          underTracker(file.previous_filename))
+      ),
+  );
+  if (others.length)
+    return {
+      ok: false,
+      detail: `${sha} touches more than CHANGELOG.md and .quest/ against the tag commit ${tagCommit}: ${others.map((file) => file?.filename ?? "(unnamed)").join(", ")}; --notes-from accepts a descendant whose net range is CHANGELOG.md plus tracker records under .quest/.`,
+    };
+  if (
+    changelog.length !== 1 ||
+    changelog[0].status !== "modified" ||
+    changelog[0].previous_filename !== undefined
+  )
+    return {
+      ok: false,
+      detail: `${sha} against the tag commit ${tagCommit}: CHANGELOG.md must be modified in the net range (status ${JSON.stringify(changelog[0]?.status ?? "absent")}); the notes are read from it.`,
+    };
+  return { ok: true, commit: sha, tagCommit };
 }
 
 /**
