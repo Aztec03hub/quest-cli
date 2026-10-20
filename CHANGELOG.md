@@ -5,12 +5,57 @@ Records start here, at 0.5.0. Earlier releases are documented in
 history; this file is the forward-looking record.
 
 Each version heading is dated with the UTC day `@opum-ai/quest` reached npm, read
-from the registry's `time` field. 0.6.1 and 0.8.0 never reached npm, so each is
-dated by its own tag. No date here is inferred (QCLI-398).
+from the registry's `time` field. 0.6.1, 0.8.0 and 0.14.0 never reached npm, so
+each is dated by its own tag. No date here is inferred (QCLI-398).
 
 ## Unreleased
 
+### Changed
+
+- **0.14.1 republishes 0.14.0's content, because 0.14.0 was tagged and never
+  published** (DEC-204 (2); QCLI-499). Both sides' `v0.14.0` tags exist and stay
+  immutable, but lore's release gate caught a defect before either side
+  published, so the pair moved to 0.14.1 under Constitution Article 3. Only the
+  version strings move here; the code is 0.14.0's.
+
+### Fixed
+
+- **Draft ids and the ids `cleanup` reports order by number too.** `draft list`
+  put `D-10` and `D-11` between `D-1` and `D-2`, and `cleanup --dry-run` listed
+  `M-10` before `M-2` (and `decisionIds` the same way), because they compared
+  ids as plain strings. They now use `compareTaskIds`, as does the milestone
+  column of `doctor`'s planning issues. Milestone lists and the planning board
+  were already in numeric order. This builds on the task-id change below.
+
+- **Linking a task to a milestone stores the milestone's task ids in numeric
+  order.** Linking re-sorted the milestone's `taskIds` as plain strings, so a
+  milestone with eleven tasks stored `T-10` and `T-11` between `T-1` and `T-2`;
+  the Backlog.md import's milestone rebuild did the same. Both now use
+  `compareTaskIds`. **An existing milestone file keeps its stored order until
+  the next task is linked to it, and that write reorders the whole list**, so
+  expect a one-time diff in `.quest/milestones/` for any milestone with ten or
+  more tasks. Unlinking a task never re-sorts, and `milestone create --task` and
+  `milestone edit --add-task/--replace-task` still store the ids in the order
+  you give them. This builds on the task-id change below.
+
+## 0.14.0
+
 ### Added
+
+- **A `question` record and the `quest question` command group** (QCLI-445;
+  opum-doc seq 179(a), DEC-190): the record by which a session asks the operator
+  something that blocks work without blocking the asking session -- the operator
+  answers it in the Quest pane. `quest question ask` files one (2 to 4 options,
+  with `--recommend` REQUIRED and naming one of them), `answer` records the
+  operator's choice or their own words with a `via` field saying how it arrived,
+  `withdraw` retires one, and `list`/`view` read them. Records live one per file
+  at `.quest/questions/Q-N.json`, id allocation is refs-aware, and `answer` must
+  name a human actor (the CLI half of the design's forgery guard; the pane UI
+  and its `tool.call` guard are QCLI-446). Allocation and the read-modify-write
+  share the task store's inter-process lock, so a concurrent ask cannot mint a
+  duplicate id and a concurrent answer or withdraw cannot lose a write -- the
+  loser never overwrites: it reports `question_not_open` (exit 6) when the
+  record already moved, or a store conflict (exit 5) when the lock wait expires.
 
 - **`task list --across-refs` reports a genuine id collision distinctly from a
   status conflict, as a per-entry `identity` field** (QCLI-432; the shape is
@@ -50,16 +95,21 @@ dated by its own tag. No date here is inferred (QCLI-398).
 
 ### Fixed
 
-- **Linking a task to a milestone stores the milestone's task ids in numeric
-  order.** Linking re-sorted the milestone's `taskIds` as plain strings, so a
-  milestone with eleven tasks stored `T-10` and `T-11` between `T-1` and `T-2`;
-  the Backlog.md import's milestone rebuild did the same. Both now use
-  `compareTaskIds`. **An existing milestone file keeps its stored order until
-  the next task is linked to it, and that write reorders the whole list**, so
-  expect a one-time diff in `.quest/milestones/` for any milestone with ten or
-  more tasks. Unlinking a task never re-sorts, and `milestone create --task` and
-  `milestone edit --add-task/--replace-task` still store the ids in the order
-  you give them. This builds on the task-id change below.
+- **The release gate now proves the committed platform binary against this
+  source tree, not only against a checksum map generated from itself**
+  (QCLI-509; opum-doc DEC-204). `check-package-artifacts.mjs` hashed each
+  committed binary and compared it to a map regenerated from those same bytes,
+  so a binary stale relative to `src/` passed by construction -- 0.13.0 shipped
+  a darwin-arm64 binary with no `--fields` support at all (QCLI-438). The gate
+  now executes the host-platform binary -- the committed bytes on a tag ref,
+  which the release job runs as-is, and the freshly built one on a dispatched
+  run -- and requires
+  `task list --fields id` and `task view <id> --fields title` to exit 0 and
+  return the projected shape. It runs in the native `immutable-candidates` job
+  (or with `QUEST_RELEASE_BINARY_PROBE=1`), not in `source-gates`: the
+  strings-first bump state must stay green while the binaries are still the
+  previous bytes, or CI can never build the new ones. The probe is a capability
+  floor, so a release that adds a user-visible surface adds a probe for it.
 
 - **Task ids order by their number, so `T-2` comes before `T-10`.** Every place
   that ordered tasks by id compared the ids as plain strings, so a workspace

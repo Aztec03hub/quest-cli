@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runCommand } from "./helpers/spawn.ts";
 
 /**
  * QCLI-425. Measured 2026-09-30 on the dev source, the built 0.12.0 platform
@@ -25,16 +26,9 @@ const MAIN = new URL("../src/cli/main.ts", import.meta.url).pathname;
 const HUMAN = ["--actor", "person-1", "--actor-kind", "human"] as const;
 
 function run(workspace: string, argv: readonly string[]) {
-  const child = Bun.spawnSync([...argv], {
+  return runCommand([...argv], {
     cwd: workspace,
-    stdout: "pipe",
-    stderr: "pipe",
   });
-  return {
-    exitCode: child.exitCode ?? 0,
-    stdout: child.stdout ? child.stdout.toString() : "",
-    stderr: child.stderr ? child.stderr.toString() : "",
-  };
 }
 
 const quest = (workspace: string, args: readonly string[]) =>

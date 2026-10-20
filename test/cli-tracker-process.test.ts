@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { realpathSync, writeFileSync } from "node:fs";
 import {
   chmod,
@@ -790,7 +790,97 @@ test("public lifecycle, draft, and planning routes preserve their declared envel
   }
 });
 
-async function invokeEveryManifestPayloadCommand(mode: "--plain" | "--json") {
+/**
+ * QCLI-501: the sweep is split by COMMAND GROUP so one test no longer bounds
+ * the whole manifest. Its 15s bound is a hang detector, was already marginal on
+ * clean dev alone (14.73s measured on a contended machine, 2026-10-14), and
+ * must never be raised. Each mode's fixtures are built ONCE (memoized below)
+ * and every group test invokes only its own commands against that shared store,
+ * so a test's cost scales with a group rather than the manifest.
+ */
+interface SweepGroup {
+  readonly label: string;
+  readonly matches: (name: string) => boolean;
+}
+const SWEEP_GROUPS: readonly SweepGroup[] = [
+  {
+    label: "registry and instructions",
+    matches: (name) =>
+      [
+        "manifest",
+        "version",
+        "help",
+        "instructions",
+        "instructions --list",
+        "instructions <guide>",
+        "agents",
+        "completion",
+      ].includes(name),
+  },
+  {
+    label: "workspace init",
+    matches: (name) => name === "init" || name === "init --reconfigure",
+  },
+  {
+    label: "migration backlog",
+    matches: (name) => name.startsWith("migration "),
+  },
+  { label: "task", matches: (name) => name.startsWith("task ") },
+  { label: "draft", matches: (name) => name.startsWith("draft ") },
+  { label: "milestone", matches: (name) => name.startsWith("milestone ") },
+  { label: "decision", matches: (name) => name.startsWith("decision ") },
+  { label: "question", matches: (name) => name.startsWith("question ") },
+  {
+    label: "search",
+    matches: (name) => name === "search" || name === "search --all",
+  },
+  {
+    label: "project and diagnostics",
+    matches: (name) =>
+      [
+        "overview",
+        "board",
+        "board export",
+        "doctor",
+        "check",
+        "cleanup",
+        "browser",
+      ].includes(name),
+  },
+];
+
+interface SweepEntry {
+  readonly name: string;
+  readonly kind: string | null;
+}
+interface SweepHarness {
+  readonly manifest: readonly SweepEntry[];
+  /** Run one command against the shared store; throws on a non-zero exit. */
+  invoke(entry: SweepEntry): Promise<string>;
+}
+
+/** One harness per mode, built lazily and reused by that mode's group tests. */
+const sweepHarnesses = new Map<string, Promise<SweepHarness>>();
+function sweepHarness(mode: "--plain" | "--json"): Promise<SweepHarness> {
+  let harness = sweepHarnesses.get(mode);
+  if (harness === undefined) {
+    harness = buildSweepHarness(mode);
+    sweepHarnesses.set(mode, harness);
+  }
+  return harness;
+}
+
+/** Temp trees a harness owns; each is removed once, at the end of the file. */
+const sweepCleanups: string[] = [];
+afterAll(async () => {
+  for (const path of sweepCleanups.splice(0)) {
+    await rm(path, { recursive: true, force: true });
+  }
+});
+
+async function buildSweepHarness(
+  mode: "--plain" | "--json",
+): Promise<SweepHarness> {
   const store = await mkdtemp(join(tmpdir(), "quest-human-output-"));
   // A directory of its own: `init`/`init --reconfigure` need a worktree
   // whose Quest content state they actually control, and `store` already
@@ -885,6 +975,45 @@ async function invokeEveryManifestPayloadCommand(mode: "--plain" | "--json") {
           "decision",
           "create",
           "Deleted decision",
+          ...actor,
+          "--json",
+        ])
+      ).stdout,
+    ).data.id as string;
+    // QCLI-445: two open questions, one to answer and one to withdraw, since
+    // answering and withdrawing are the record's two mutually-exclusive
+    // terminal states and a single question cannot exercise both.
+    const questionToAnswer = JSON.parse(
+      (
+        await quest(store, [
+          "question",
+          "ask",
+          "--title",
+          "Existing question",
+          "--option",
+          "A=Yes:y",
+          "--option",
+          "B=No:n",
+          "--recommend",
+          "A",
+          ...actor,
+          "--json",
+        ])
+      ).stdout,
+    ).data.id as string;
+    const questionToWithdraw = JSON.parse(
+      (
+        await quest(store, [
+          "question",
+          "ask",
+          "--title",
+          "Withdrawable question",
+          "--option",
+          "A=Yes:y",
+          "--option",
+          "B=No:n",
+          "--recommend",
+          "A",
           ...actor,
           "--json",
         ])
@@ -1173,6 +1302,42 @@ async function invokeEveryManifestPayloadCommand(mode: "--plain" | "--json") {
         ...actor,
         "--plain",
       ],
+      // QCLI-445: manifest order runs ask before answer/withdraw, so `ask`
+      // creates a fresh question and the other two target the fixtures above.
+      "question ask": [
+        "question",
+        "ask",
+        "--title",
+        "Plain question",
+        "--option",
+        "A=Yes:y",
+        "--option",
+        "B=No:n",
+        "--recommend",
+        "A",
+        ...actor,
+        "--plain",
+      ],
+      "question answer": [
+        "question",
+        "answer",
+        questionToAnswer,
+        "--choice",
+        "A",
+        ...actor,
+        "--plain",
+      ],
+      "question withdraw": [
+        "question",
+        "withdraw",
+        questionToWithdraw,
+        "--reason",
+        "no longer needed",
+        ...actor,
+        "--plain",
+      ],
+      "question list": ["question", "list", "--plain"],
+      "question view": ["question", "view", questionToAnswer, "--plain"],
       overview: ["overview", "--plain"],
       board: ["board", "--plain"],
       "board export": [
@@ -1191,8 +1356,7 @@ async function invokeEveryManifestPayloadCommand(mode: "--plain" | "--json") {
       browser: ["browser", "--plain"],
     };
 
-    const outputs = new Map<string, string>();
-    for (const entry of manifest) {
+    const invoke = async (entry: SweepEntry): Promise<string> => {
       const recipe = invocations[entry.name];
       expect(
         recipe,
@@ -1231,58 +1395,72 @@ async function invokeEveryManifestPayloadCommand(mode: "--plain" | "--json") {
         ? (JSON.parse(result.stderr) as { readonly error_type?: string })
         : undefined;
       expect(diagnostic?.error_type, entry.name).not.toBe("usage");
-      outputs.set(entry.name, result.stdout);
-    }
-    return { manifest, outputs };
+      return result.stdout;
+    };
+    return { manifest, invoke };
   } finally {
-    await rm(store, { recursive: true, force: true });
-    await rm(freshWorkspace, { recursive: true, force: true });
-    await rm(backlogSource, { recursive: true, force: true });
+    // QCLI-501: the store OUTLIVES this call -- the group tests invoke against
+    // it -- so the trees are registered for removal in afterAll, not here.
+    sweepCleanups.push(store, freshWorkspace, backlogSource);
   }
 }
 
-test("every manifest payload command renders more than its kind in plain mode", async () => {
-  const { manifest, outputs } =
-    await invokeEveryManifestPayloadCommand("--plain");
-  for (const entry of manifest.filter(
-    (command): command is { readonly name: string; readonly kind: string } =>
-      command.kind !== null,
-  )) {
-    const stdout = outputs.get(entry.name);
-    expect(stdout, entry.name).toBeDefined();
-    expect(stdout, entry.name).not.toBe(`${entry.kind}\n`);
-    expect(stdout?.trim(), entry.name).not.toBe("");
-    // QCLI-273: the plain renderer must never leak an UNSET optional field as
-    // the literal word `undefined` -- QCLI-272's divergence, where --json
-    // (JSON.stringify drops an undefined-valued property) was right and
-    // --plain (Object.entries keeps it) printed `undefined`. This harness
-    // already runs EVERY manifest payload command in --plain and --json, so
-    // this one assertion closes the class structurally for all of them, which
-    // is why the per-test pairing helper this task weighed was declined (see
-    // the task record).
-    expect(stdout ?? "", entry.name).not.toContain("undefined");
+// QCLI-501: one test per (mode, command group) rather than two tests over the
+// whole manifest, so no single test approaches the 15s bound as the manifest
+// grows. Each group invokes only its own commands against the shared, memoized
+// store; the assertions are exactly the two the monolithic tests made.
+for (const mode of ["--plain", "--json"] as const) {
+  for (const group of SWEEP_GROUPS) {
+    test(`every manifest payload command in the ${group.label} group draws more than its kind (${mode})`, async () => {
+      const harness = await sweepHarness(mode);
+      const entries = harness.manifest.filter((entry) =>
+        group.matches(entry.name),
+      );
+      const outputs = new Map<string, string>();
+      for (const entry of entries)
+        outputs.set(entry.name, await harness.invoke(entry));
+      for (const entry of entries.filter(
+        (
+          command,
+        ): command is { readonly name: string; readonly kind: string } =>
+          command.kind !== null,
+      )) {
+        const stdout = outputs.get(entry.name);
+        expect(stdout, entry.name).toBeDefined();
+        if (mode === "--plain") {
+          expect(stdout, entry.name).not.toBe(`${entry.kind}\n`);
+          expect(stdout?.trim(), entry.name).not.toBe("");
+          // QCLI-273: the plain renderer must never leak an UNSET optional
+          // field as the literal word `undefined` -- QCLI-272's divergence,
+          // where --json (JSON.stringify drops an undefined-valued property)
+          // was right and --plain (Object.entries keeps it) printed
+          // `undefined`. The sweep runs EVERY manifest payload command, so this
+          // one assertion closes the class structurally for all of them.
+          expect(stdout ?? "", entry.name).not.toContain("undefined");
+        } else {
+          const envelope = JSON.parse(stdout ?? "") as Record<string, unknown>;
+          if (entry.name === "task binding") {
+            // The public opum-agent-workflow/v1 envelope is its own closed shape.
+            expect(envelope.contract, entry.name).toBe("opum-agent-workflow");
+            continue;
+          }
+          expect(envelope.principal, entry.name).toBeNull();
+          expect(Object.keys(envelope).at(-1), entry.name).toBe("principal");
+        }
+      }
+    }, 15_000);
   }
-}, 15_000);
+}
 
-test("every manifest payload command declares principal null as its last JSON key", async () => {
-  const { manifest, outputs } =
-    await invokeEveryManifestPayloadCommand("--json");
-  for (const entry of manifest.filter(
-    (command): command is { readonly name: string; readonly kind: string } =>
-      command.kind !== null,
-  )) {
-    const stdout = outputs.get(entry.name);
-    expect(stdout, entry.name).toBeDefined();
-    const envelope = JSON.parse(stdout ?? "") as Record<string, unknown>;
-    if (entry.name === "task binding") {
-      // The public opum-agent-workflow/v1 envelope is its own closed shape.
-      expect(envelope.contract, entry.name).toBe("opum-agent-workflow");
-      continue;
-    }
-    expect(envelope.principal, entry.name).toBeNull();
-    expect(Object.keys(envelope).at(-1), entry.name).toBe("principal");
+test("the sweep groups partition the manifest so no command is silently unswept (QCLI-501)", async () => {
+  const harness = await sweepHarness("--plain");
+  for (const entry of harness.manifest) {
+    const matched = SWEEP_GROUPS.filter((group) =>
+      group.matches(entry.name),
+    ).map((group) => group.label);
+    expect(matched, entry.name).toHaveLength(1);
   }
-}, 15_000);
+});
 
 test("task edit can mutate title, priority, type and ordinal (QCLI-133)", async () => {
   const store = await mkdtemp(join(tmpdir(), "quest-edit-fields-"));
@@ -2267,7 +2445,11 @@ test("every key a task read emits is manifest-declared, and every declared field
 
     const manifest = JSON.parse(
       (await quest(store, ["manifest", "--json"])).stdout,
-    ).data.commands as { name: string; fields?: string[] }[];
+    ).data.commands as {
+      name: string;
+      fields?: string[];
+      mutates?: boolean;
+    }[];
     const viewed = JSON.parse(
       (await quest(store, ["task", "view", created.id, "--json"])).stdout,
     ).data;
@@ -2343,6 +2525,33 @@ test("every key a task read emits is manifest-declared, and every declared field
       (await quest(store, ["search", "Fully", "--json"])).stdout,
     ).data.find((task: { id: string }) => task.id === created.id);
 
+    // QCLI-445 review: a question view/list payload, so the complete-fields
+    // check below covers the question family as well as the task reads.
+    const askedQuestion = JSON.parse(
+      (
+        await quest(store, [
+          "question",
+          "ask",
+          "--title",
+          "Ship 0.14.0?",
+          "--option",
+          "A=Yes:ship",
+          "--option",
+          "B=No:wait",
+          "--recommend",
+          "A",
+          ...human,
+        ])
+      ).stdout,
+    ).data as { id: string };
+    const questionViewed = JSON.parse(
+      (await quest(store, ["question", "view", askedQuestion.id, "--json"]))
+        .stdout,
+    ).data;
+    const questionListed = JSON.parse(
+      (await quest(store, ["question", "list", "--json"])).stdout,
+    ).data[0];
+
     // Only the read surfaces. `task create` and `task edit` also carry a
     // `fields` list, but theirs is the settable-input vocabulary — it holds
     // `addLabels` and `clearParent` and omits `id` and `status` — so an
@@ -2355,22 +2564,56 @@ test("every key a task read emits is manifest-declared, and every declared field
     // key present, with exceptions carved out for the conditional ones), which
     // a curated subset satisfies while the record carries more: that is how
     // the manifest came to under-declare both records.
-    for (const [name, payload] of [
+    // QCLI-461: records that carry the CONDITIONAL keys the rich task does not
+    // -- so dropping `unresolvedAtCompletion` or `resolution` from a declared
+    // set is caught here rather than passing unnoticed.
+    const payloads: readonly (readonly [string, object])[] = [
       ["task view", viewed],
-      ["task list", listed],
-      ["search", searched],
-      // QCLI-461: records that carry the CONDITIONAL keys the rich task does
-      // not -- so dropping `unresolvedAtCompletion` or `resolution` from a
-      // declared set is caught here rather than passing unnoticed.
+      ["task view", viewedWithMaxNotes],
       ["task view", unresolvedView],
       ["task view", closedView],
-    ] as const) {
+      ["task list", listed],
+      ["search", searched],
+      ["question view", questionViewed],
+      ["question list", questionListed],
+    ];
+    // QCLI-445 review: every non-mutating command that declares `fields` must
+    // be classified -- either checked above (a record read whose declared set is
+    // the COMPLETE key set) or named here as a CURATED SUBSET, to which the
+    // payload-subset rule does not apply. Deriving the population from the
+    // manifest, rather than from a fixed list, is what stops the next family
+    // (this one included) from slipping past the check unnoticed.
+    const CURATED_FIELDS_READS = new Set<string>([
+      "instructions",
+      "instructions --list",
+      "instructions <guide>",
+      "migration backlog preview",
+      "migration backlog status",
+      "task status-flow",
+      "task binding",
+      "task list --across-refs",
+      "draft view",
+      "milestone list",
+      "milestone view",
+      "decision list",
+      "decision view",
+      "board export",
+    ]);
+    const checkedNames = new Set(payloads.map(([name]) => name));
+    const unclassified = manifest
+      .filter((entry) => entry.mutates === false && entry.fields !== undefined)
+      .map((entry) => entry.name)
+      .filter(
+        (name) => !checkedNames.has(name) && !CURATED_FIELDS_READS.has(name),
+      );
+    expect({ unclassified }).toEqual({ unclassified: [] });
+    for (const [name, payload] of payloads) {
       const declared = manifest.find((entry) => entry.name === name)?.fields;
       expect({ name, declared: declared !== undefined }).toEqual({
         name,
         declared: true,
       });
-      const undeclared = Object.keys(payload as object).filter(
+      const undeclared = Object.keys(payload).filter(
         (field) => !(declared ?? []).includes(field),
       );
       expect({ name, undeclared }).toEqual({ name, undeclared: [] });

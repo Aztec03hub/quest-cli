@@ -16,7 +16,7 @@ export const commandHelp: Record<
 > = {
   manifest: {
     summary:
-      "Print the versioned public command registry. A command's `fields` array advertises that command's key vocabulary, and its MEANING is NOT uniform across commands -- a consumer must not assume one reading for all of them. (1) For the read commands QCLI-461 brought to completeness -- `task list`, `task view` and `search` -- it is the COMPLETE top-level key set of `data` (a key is present only on a record that actually carries it), not a curated subset, and it is exactly what `--fields` accepts. (2) Other read commands (for example `milestone view`, `decision view`, the `draft` reads) may still advertise a CURATED SUBSET of the keys their `data` carries -- so a command not on the completed list in (1) must be treated as a subset unless verified otherwise. (3) For `task create`, `task edit` and `task edit-batch`, `fields` is the settable-INPUT vocabulary, which lists the keys a caller may SET, not the keys a payload carries.",
+      "Print the versioned public command registry. A command's `fields` array advertises that command's key vocabulary, and its MEANING is NOT uniform across commands -- a consumer must not assume one reading for all of them. (1) For the read commands brought to completeness -- `task list`, `task view`, `search`, `question list` and `question view` -- it is the COMPLETE top-level key set of `data` (a key is present only on a record that actually carries it), not a curated subset. `--fields` PROJECTION is a separate surface, offered only on `task list` and `task view` and exactly this set there: `search`, `question list` and `question view` declare the same complete set but do NOT accept `--fields`. (2) Other read commands (for example `milestone view`, `decision view`, the `draft` reads) may still advertise a CURATED SUBSET of the keys their `data` carries -- so a command not on the completed list in (1) must be treated as a subset unless verified otherwise. (3) For `task create`, `task edit` and `task edit-batch`, `fields` is the settable-INPUT vocabulary, which lists the keys a caller may SET, not the keys a payload carries.",
     usage: "quest manifest",
     flags: [],
   },
@@ -556,6 +556,44 @@ export const commandHelp: Record<
     summary: "Delete a decision.",
     usage: "quest decision delete <id> --actor <name> --actor-kind human",
     flags: [...ACTOR_FLAGS],
+  },
+  "question ask": {
+    summary:
+      "File an operator question (opum-doc seq 179(a), DEC-190): a record that blocks the tasks that need the answer without blocking the asking session, until the operator answers it in the Quest pane. --title is required. Supply 2 to 4 --option <key>=<label>:<description> values, and --recommend <key>, which is REQUIRED and must name one of them; a text-only answer through the pane's Other row stays allowed. The id allocates as Q-N unless --id is given. Status starts `open`.",
+    usage:
+      'quest question ask --title "<title>" --option A=<label>:<description> --option B=<label>:<description> [--option C=<label>:<description>] [--option D=<label>:<description>] --recommend A [--context "<context>"] --actor <name> --actor-kind human',
+    flags: [
+      "--id",
+      "--title",
+      "--context",
+      "--option",
+      "--recommend",
+      ...ACTOR_FLAGS,
+    ],
+  },
+  "question answer": {
+    summary:
+      "Record the operator's answer to an open question: either --choice <option key> or --text \"<their own words, verbatim>\". The actor MUST be the operator -- --actor-kind human is required, and a delegated agent is refused (the CLI half of the design's forgery guard). --via names how the answer arrived; the Quest board pane passes quest-board-pane, and any other value is not an operator answer. Sets status `answered`.",
+    usage:
+      'quest question answer <id> --choice <key> | --text "<words>" [--via "<source>"] --actor <name> --actor-kind human',
+    flags: ["--choice", "--text", "--via", ...ACTOR_FLAGS],
+  },
+  "question withdraw": {
+    summary:
+      "Withdraw an open question that no longer needs asking, recording --reason. Sets status `withdrawn`. Only an `open` question can be answered or withdrawn.",
+    usage:
+      'quest question withdraw <id> --reason "<text>" --actor <name> --actor-kind human',
+    flags: ["--reason", ...ACTOR_FLAGS],
+  },
+  "question list": {
+    summary: "List question records, optionally filtered by --status.",
+    usage: "quest question list [--status open|answered|withdrawn]",
+    flags: ["--status"],
+  },
+  "question view": {
+    summary: "View one question record by id.",
+    usage: "quest question view <id>",
+    flags: [],
   },
   overview: {
     summary:

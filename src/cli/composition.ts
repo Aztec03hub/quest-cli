@@ -6,9 +6,11 @@ import {
 import { LocalAgentInstructionPort } from "../adapters/agents/local-agent-instructions.ts";
 import { BacklogImporter } from "../adapters/migration/backlog/importer.ts";
 import { LocalPlanningRepository } from "../adapters/planning/local-planning-repository.ts";
+import { LocalQuestionRepository } from "../adapters/questions/local-question-repository.ts";
 import { LocalWorkspacePort } from "../adapters/workspaces/local-workspaces.ts";
 import { BacklogImportService } from "../application/migration/backlog-public.ts";
 import { PlanningService } from "../application/planning/planning.ts";
+import { QuestionService } from "../application/questions/questions.ts";
 import { LocalTaskRepository } from "../application/tasks/local-task-repository.ts";
 import {
   defaultTaskLifecyclePolicy,
@@ -52,6 +54,11 @@ export function createAgentPluginPort(root: string) {
 
 export function createPlanningService(root: string): PlanningService {
   return new PlanningService(new LocalPlanningRepository(root));
+}
+
+/** QCLI-445: the operator-question record store, one file per question. */
+export function createQuestionService(root: string): QuestionService {
+  return new QuestionService(new LocalQuestionRepository(root));
 }
 
 export function createWorkspacePort() {

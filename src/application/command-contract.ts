@@ -105,6 +105,11 @@ export interface CommandManifestEntry {
     | "decision create"
     | "decision edit"
     | "decision delete"
+    | "question ask"
+    | "question answer"
+    | "question withdraw"
+    | "question list"
+    | "question view"
     | "overview"
     | "board"
     | "board export"
@@ -743,6 +748,70 @@ export const commandManifest = {
       schemaVersion: 1,
       kind: "decision.deleted",
       mutates: true,
+    },
+    // QCLI-445 / opum-doc seq 179(a): the operator-question record. `ask`
+    // creates it, `answer` and `withdraw` are its two terminal transitions,
+    // and `list`/`view` read it.
+    {
+      name: "question ask",
+      schemaVersion: 1,
+      kind: "question.asked",
+      mutates: true,
+      fields: ["context", "options", "recommended", "title"],
+    },
+    {
+      name: "question answer",
+      schemaVersion: 1,
+      kind: "question.answered",
+      mutates: true,
+      fields: ["answer"],
+    },
+    {
+      name: "question withdraw",
+      schemaVersion: 1,
+      kind: "question.withdrawn",
+      mutates: true,
+      fields: ["withdrawal"],
+    },
+    {
+      name: "question list",
+      schemaVersion: 1,
+      kind: "question.list",
+      mutates: false,
+      filters: ["status"],
+      // QCLI-461 / QCLI-482: the COMPLETE top-level key set of a question
+      // record, not a curated subset -- so `id`, `createdAt` and `updatedAt`
+      // are declared here too.
+      fields: [
+        "answer",
+        "context",
+        "createdAt",
+        "id",
+        "options",
+        "recommended",
+        "status",
+        "title",
+        "updatedAt",
+        "withdrawal",
+      ],
+    },
+    {
+      name: "question view",
+      schemaVersion: 1,
+      kind: "question.view",
+      mutates: false,
+      fields: [
+        "answer",
+        "context",
+        "createdAt",
+        "id",
+        "options",
+        "recommended",
+        "status",
+        "title",
+        "updatedAt",
+        "withdrawal",
+      ],
     },
     {
       name: "overview",

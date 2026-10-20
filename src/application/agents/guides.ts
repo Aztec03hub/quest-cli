@@ -54,6 +54,7 @@ read, edit or complete tracker state, so writes stay attributed and consistent.
 - \`draft create/list/view/promote/archive\`   Draft lifecycle (an idea not yet promoted to a task)
 - \`milestone list/view/create/edit/archive/delete\`   Milestone lifecycle
 - \`decision list/view/create/edit/delete\`    Decision-record lifecycle
+- \`question ask/answer/withdraw/list/view\`   Operator-question lifecycle; asked by a session and answered by the operator in the Quest pane (opum-doc seq 179(a), DEC-190)
 - \`search [--all]\`              Search tasks, or tasks + milestones + decisions together
 - \`overview\` / \`board\` / \`doctor\`   Project overview, kanban-style board, or consistency check
 - \`check\`                      Run a named check; \`--continuity --base <ref>\` fails when a task record id or alias present at the merge base resolves nowhere now

@@ -2,7 +2,7 @@ schema_version = 1
 name = "verification"
 description = "Retrieves quest-cli acceptance, contract, release-truth, architecture, and operations evidence needed to verify a change without widening its authority."
 kind = "specialist"
-max_tokens = 9000
+max_tokens = 46204
 pinned = [
   "runbooks/quest-cli-operations",
   "reference/quest-cli-release-truth",

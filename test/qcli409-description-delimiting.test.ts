@@ -2,21 +2,15 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runCommand } from "./helpers/spawn.ts";
 
 const MAIN = new URL("../src/cli/main.ts", import.meta.url).pathname;
 
 function quest(cwd: string, args: readonly string[]) {
-  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
+  return runCommand([process.execPath, MAIN, ...args], {
     cwd,
-    stdout: "pipe",
-    stderr: "pipe",
     env: { ...process.env, QUEST_AGENT_PLUGINS: "off" },
   });
-  return {
-    exitCode: child.exitCode ?? 0,
-    stdout: child.stdout ? child.stdout.toString() : "",
-    stderr: child.stderr ? child.stderr.toString() : "",
-  };
 }
 
 const ACTOR = ["--actor", "h", "--actor-kind", "human", "--json"] as const;

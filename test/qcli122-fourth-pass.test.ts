@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { LocalTaskRepository } from "../src/application/tasks/local-task-repository.ts";
 import { TaskService } from "../src/application/tasks/tasks.ts";
 import { createTask } from "../src/domain/tasks/tasks.ts";
+import { runCommand } from "./helpers/spawn.ts";
 
 /**
  * QCLI-122 fourth-pass red contracts (FMC f5e4fd64). Production-path only:
@@ -24,16 +25,9 @@ import { createTask } from "../src/domain/tasks/tasks.ts";
 const MAIN = new URL("../src/cli/main.ts", import.meta.url).pathname;
 
 function spawnJson(workspace: string, args: readonly string[]) {
-  const child = Bun.spawnSync([process.execPath, MAIN, ...args], {
+  return runCommand([process.execPath, MAIN, ...args], {
     cwd: workspace,
-    stdout: "pipe",
-    stderr: "pipe",
   });
-  return {
-    exitCode: child.exitCode ?? 0,
-    stdout: child.stdout ? child.stdout.toString() : "",
-    stderr: child.stderr ? child.stderr.toString() : "",
-  };
 }
 
 async function seed(root: string, id: string, title: string) {

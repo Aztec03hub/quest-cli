@@ -241,6 +241,8 @@ export class LocalWorkspacePort implements WorkspacePort {
       "tasks",
       "completed",
       "drafts",
+      // QCLI-445: a workspace holding only question records owns content too.
+      "questions",
       join("archive", "tasks"),
       join("archive", "drafts"),
     ]) {
